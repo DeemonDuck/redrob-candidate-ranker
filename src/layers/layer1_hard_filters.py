@@ -52,3 +52,22 @@ def check_experience_too_low(candidate: dict) -> tuple[bool, str]:
     if yoe < MIN_YEARS_EXPERIENCE:
         return True, f"years_of_experience={yoe} < {MIN_YEARS_EXPERIENCE} (hard floor)"
     return False, ""
+
+
+# ── Rule 2: Pure services company entire career ───────────────────────────────
+
+"""JD: entire career at TCS/Wipro/Infosys etc. → not a fit."""
+
+def check_pure_services_career(candidate: dict) -> tuple[bool, str]:
+    
+    history = _career_history(candidate)
+    if not history:
+        return False, ""
+
+    services_count = sum(
+        1 for job in history
+        if _normalise(job.get("company", "")) in PURE_SERVICES_COMPANIES
+    )
+    if services_count == len(history):
+        return True, "Entire career at pure-services companies (no product company experience)"
+    return False, ""
