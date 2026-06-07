@@ -1,0 +1,17 @@
+# Core
+pandas
+tqdm
+
+# Layer 4 - Scoring
+lightgbm
+scikit-learn
+numpy
+
+# Semantic similarity (Layer 4 - SBERT)
+sentence-transformers
+
+# Validation
+pyyaml
+
+# Sandbox/Demo
+streamlit
