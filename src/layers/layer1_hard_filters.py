@@ -39,3 +39,16 @@ def _months_since(date_str: str) -> int:
         return (today.year - d.year) * 12 + (today.month - d.month)
     except ValueError:
         return 9999
+
+
+
+# ── Rule 1: Experience too low ────────────────────────────────────────────────
+
+"""JD: 5-9 year band; under 3 is a definitive no."""
+
+def check_experience_too_low(candidate: dict) -> tuple[bool, str]:
+    
+    yoe = candidate.get("profile", {}).get("years_of_experience", 0)
+    if yoe < MIN_YEARS_EXPERIENCE:
+        return True, f"years_of_experience={yoe} < {MIN_YEARS_EXPERIENCE} (hard floor)"
+    return False, ""
