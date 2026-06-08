@@ -74,21 +74,45 @@ def check_pure_services_career(candidate: dict) -> tuple[bool, str]:
 
 # ── Rule 3: Wrong domain — CV/speech/robotics, no NLP/IR ────────────────────
 
-"""JD: CV/speech/robotics primary expertise without NLP/IR → not a fit."""
+"""
+    JD: PRIMARY expertise is CV/speech/robotics without NLP/IR → not a fit.
+    'Primary' = majority of career months, not just any mention.
+    A candidate who did CV for 2 years then search for 5 years is fine.
+    """
 
 def check_wrong_domain(candidate: dict) -> tuple[bool, str]:
     
-    career_text = _all_career_text(candidate)
+    history = _career_history(candidate)
+    if not history:
+        return False, ""
+ 
+    wrong_domain_months = 0
+    nlp_ir_months = 0
+    total_months = 0
+ 
+    for job in history:
+        duration = job.get("duration_months", 0)
+        total_months += duration
+        text = _normalise(job.get("title", "")) + " " + _normalise(job.get("description", ""))
+ 
+        if any(kw in text for kw in WRONG_DOMAIN_KEYWORDS):
+            wrong_domain_months += duration
+        if any(kw in text for kw in NLP_IR_KEYWORDS):
+            nlp_ir_months += duration
+ 
+    # Also check skills for NLP/IR signals (Tier 5 candidates)
     skills = _skill_names(candidate)
-    all_text = career_text + " " + " ".join(skills)
-
-    has_wrong_domain = any(kw in all_text for kw in WRONG_DOMAIN_KEYWORDS)
-    has_nlp_ir = any(kw in all_text for kw in NLP_IR_KEYWORDS)
-
-    if has_wrong_domain and not has_nlp_ir:
-        return True, "Primary domain is CV/speech/robotics with no NLP/IR exposure"
+    has_nlp_ir_skills = any(kw in skills for kw in NLP_IR_KEYWORDS)
+ 
+    if total_months == 0:
+        return False, ""
+ 
+    wrong_ratio = wrong_domain_months / total_months
+    # Eliminate only if: >50% of career is wrong domain AND no meaningful NLP/IR anywhere
+    if wrong_ratio > 0.5 and nlp_ir_months == 0 and not has_nlp_ir_skills:
+        return True, f"Primary domain is CV/speech/robotics ({wrong_ratio:.0%} of career) with no NLP/IR exposure"
     return False, ""
-
+ 
 
 # ── Rule 4: Zero must-have skills ────────────────────────────────────────────
 
