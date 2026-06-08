@@ -50,3 +50,18 @@ def get_location_score(candidate: dict) -> float:
         return 0.2
  
     return 0.05
+
+
+# ── Availability scoring ──────────────────────────────────────────────────────
+ 
+def _months_since(date_str: str) -> int:
+    if not date_str:
+        return 999
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        today = date.today()
+        return (today.year - d.year) * 12 + (today.month - d.month)
+    except ValueError:
+        return 999
+    
+    
