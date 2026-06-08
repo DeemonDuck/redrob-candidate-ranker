@@ -95,3 +95,15 @@ def get_availability_score(candidate: dict) -> float:
         recency_score = 0.2
     else:
         recency_score = 0.05  # over a year inactive — basically unreachable
+
+    
+    # 3. Notice period (weight: 0.20)
+    notice_days = signals.get("notice_period_days", 90)
+    if notice_days <= 30:
+        notice_score = 1.0   # JD: "love sub-30, can buy out up to 30"
+    elif notice_days <= 60:
+        notice_score = 0.6
+    elif notice_days <= 90:
+        notice_score = 0.3   # JD: "still in scope but bar gets higher"
+    else:
+        notice_score = 0.1   # 90+ days is a real logistical problem
