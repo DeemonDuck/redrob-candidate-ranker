@@ -121,4 +121,38 @@ def get_availability_score(candidate: dict) -> float:
     )
  
     return round(availability_score, 4)
+
+
+# ── Master function ───────────────────────────────────────────────────────────
+
+    """
+    Returns a dict with location and availability scores.
+    No elimination — just scoring for Layer 4.
  
+    {
+        "location_score": 0.0–1.0,
+        "availability_score": 0.0–1.0,
+        "location_debug": "Hyderabad → tier 2 city",
+        "availability_debug": "open=True, inactive=2mo, notice=30d, response=0.8"
+    }
+    """
+
+def apply_layer3(candidate: dict) -> dict:
+
+    signals = candidate.get("redrob_signals", {})
+    profile = candidate.get("profile", {})
+ 
+    loc_score = get_location_score(candidate)
+    avail_score = get_availability_score(candidate)
+ 
+    return {
+        "location_score": loc_score,
+        "availability_score": avail_score,
+        "location_debug": f"{profile.get('location')} | country={profile.get('country')} | relocate={signals.get('willing_to_relocate')}",
+        "availability_debug": (
+            f"open={signals.get('open_to_work_flag')} | "
+            f"inactive={_months_since(signals.get('last_active_date', ''))}mo | "
+            f"notice={signals.get('notice_period_days')}d | "
+            f"response={signals.get('recruiter_response_rate')}"
+        )
+    }
