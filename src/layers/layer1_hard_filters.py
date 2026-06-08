@@ -107,3 +107,32 @@ def check_zero_must_have_skills(candidate: dict) -> tuple[bool, str]:
         return True, "Zero must-have skills matched in skills list or career history"
     return False, ""
 
+
+# ── Rule 5: Pure research, no production deployment ──────────────────────────
+
+"""JD: pure research/academic, no production deployment → explicit disqualifier."""
+
+def check_pure_research_no_production(candidate: dict) -> tuple[bool, str]:
+    
+    history = _career_history(candidate)
+    if not history:
+        return False, ""
+
+    research_titles = {"researcher", "research scientist", "research engineer",
+                       "phd student", "postdoc", "postdoctoral", "intern"}
+    production_signals = {
+        "deployed", "production", "shipped", "served", "api",
+        "service", "platform", "users", "scale", "product"
+    }
+
+    all_research = all(
+        any(rt in _normalise(job.get("title", "")) for rt in research_titles)
+        for job in history
+    )
+    career_text = _all_career_text(candidate)
+    has_production = any(sig in career_text for sig in production_signals)
+
+    if all_research and not has_production:
+        return True, "Pure research/academic background with no production deployment signals"
+    return False, ""
+
