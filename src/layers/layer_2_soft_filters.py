@@ -178,3 +178,23 @@ def check_implicit_services_pattern(candidate: dict) -> tuple[bool, str]:
     return False, ""
  
  
+# ── Master function ───────────────────────────────────────────────────────────
+ 
+LAYER2_CHECKS = [
+    check_career_skills_alignment,
+    check_trusted_must_have_count,
+    check_implicit_services_pattern,
+]
+ 
+def apply_layer2(candidate: dict) -> tuple[bool, str]:
+    """
+    Run all Layer 2 soft filters.
+    Returns (True, reason) on first elimination.
+    Returns (False, "") if candidate passes.
+    """
+    for check in LAYER2_CHECKS:
+        eliminated, reason = check(candidate)
+        if eliminated:
+            return True, reason
+    return False, ""
+ 
