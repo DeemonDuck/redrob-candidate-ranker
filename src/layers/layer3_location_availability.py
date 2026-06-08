@@ -107,3 +107,18 @@ def get_availability_score(candidate: dict) -> float:
         notice_score = 0.3   # JD: "still in scope but bar gets higher"
     else:
         notice_score = 0.1   # 90+ days is a real logistical problem
+
+    
+     # 4. Recruiter response rate (weight: 0.15)
+    response_rate = signals.get("recruiter_response_rate", 0.5)
+    response_score = response_rate  # already 0.0–1.0
+ 
+    availability_score = (
+        0.35 * open_score +
+        0.30 * recency_score +
+        0.20 * notice_score +
+        0.15 * response_score
+    )
+ 
+    return round(availability_score, 4)
+ 
