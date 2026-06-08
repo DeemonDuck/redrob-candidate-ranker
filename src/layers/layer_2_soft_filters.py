@@ -67,4 +67,48 @@ def check_career_skills_alignment(candidate: dict) -> tuple[bool, str]:
             f"({ghost_count}/{total} ghost skills)"
         )
     return False, ""
+
+
+
+# ── Check 2: Trusted must-have skill count ────────────────────────────────────
+
+    """
+    Layer 1 only required >=1 must-have skill to exist anywhere.
+    Layer 2 requires >=2 must-have skills with real proof:
+      proof = endorsements > 0 OR duration_months > 6 OR has assessment score
+    
+    Catches candidates who list one legit keyword + many ghost skills.
+    """
+
+def check_trusted_must_have_count(candidate: dict) -> tuple[bool, str]:
+
+    skills = candidate.get("skills", [])
+    assessment_scores = candidate.get("redrob_signals", {}).get("skill_assessment_scores", {})
+    career_texts = " ".join(_career_text_per_job(candidate))
  
+    trusted_must_haves = []
+ 
+    for skill in skills:
+        name = _normalise(skill["name"])
+        if name not in MUST_HAVE_SKILLS:
+            # also check partial — e.g. "elasticsearch" not exact but valid
+            if not any(mh in name or name in mh for mh in MUST_HAVE_SKILLS):
+                continue
+ 
+        has_proof = (
+            skill.get("endorsements", 0) > 0
+            or skill.get("duration_months", 0) > 6
+            or skill["name"] in assessment_scores
+            or name in career_texts  # mentioned in actual work
+        )
+ 
+        if has_proof:
+            trusted_must_haves.append(skill["name"])
+ 
+    if len(trusted_must_haves) < 2:
+        return (
+            True,
+            f"Fewer than 2 trusted must-have skills "
+            f"(found: {trusted_must_haves if trusted_must_haves else 'none'})"
+        )
+    return False, ""
