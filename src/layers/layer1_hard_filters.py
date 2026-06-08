@@ -71,3 +71,21 @@ def check_pure_services_career(candidate: dict) -> tuple[bool, str]:
     if services_count == len(history):
         return True, "Entire career at pure-services companies (no product company experience)"
     return False, ""
+
+# ── Rule 3: Wrong domain — CV/speech/robotics, no NLP/IR ────────────────────
+
+"""JD: CV/speech/robotics primary expertise without NLP/IR → not a fit."""
+
+def check_wrong_domain(candidate: dict) -> tuple[bool, str]:
+    
+    career_text = _all_career_text(candidate)
+    skills = _skill_names(candidate)
+    all_text = career_text + " " + " ".join(skills)
+
+    has_wrong_domain = any(kw in all_text for kw in WRONG_DOMAIN_KEYWORDS)
+    has_nlp_ir = any(kw in all_text for kw in NLP_IR_KEYWORDS)
+
+    if has_wrong_domain and not has_nlp_ir:
+        return True, "Primary domain is CV/speech/robotics with no NLP/IR exposure"
+    return False, ""
+
