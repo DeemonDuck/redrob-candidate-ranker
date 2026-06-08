@@ -162,3 +162,25 @@ def check_llm_wrapper_only(candidate: dict) -> tuple[bool, str]:
         return True, "AI skills appear limited to LLM wrappers (LangChain/OpenAI) with no pre-LLM ML background"
     return False, ""
 
+# ── Master function ───────────────────────────────────────────────────────────
+
+LAYER1_CHECKS = [
+    check_experience_too_low,
+    check_pure_services_career,
+    check_wrong_domain,
+    check_zero_must_have_skills,
+    check_pure_research_no_production,
+    check_llm_wrapper_only,
+]
+
+def apply_layer1(candidate: dict) -> tuple[bool, str]:
+    """
+    Run all Layer 1 checks on a candidate.
+    Returns (True, reason) on first disqualification hit.
+    Returns (False, "") if candidate passes all checks.
+    """
+    for check in LAYER1_CHECKS:
+        disqualified, reason = check(candidate)
+        if disqualified:
+            return True, reason
+    return False, ""

@@ -1,7 +1,3 @@
-# ============================================================
-# constants.py — All JD-grounded keyword lists live here
-# Edit this file if the JD changes. Don't scatter strings in logic.
-# ============================================================
 
 # --- Layer 1: Services-only companies (JD: "explicitly do not want") ---
 PURE_SERVICES_COMPANIES = {
