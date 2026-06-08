@@ -64,4 +64,21 @@ def _months_since(date_str: str) -> int:
     except ValueError:
         return 999
     
+def get_availability_score(candidate: dict) -> float:
+    """
+    Returns 0.0-1.0 based on how reachable this candidate actually is.
+ 
+    Components:
+      - open_to_work_flag        (hard signal)
+      - last_active_date         (recency)
+      - notice_period_days       (JD: loves sub-30, tolerates up to 90)
+      - recruiter_response_rate  (will they reply?)
     
+    All components averaged with weights.
+    """
+    signals = candidate.get("redrob_signals", {})
+ 
+    # 1. Open to work (weight: 0.35)
+    open_to_work = signals.get("open_to_work_flag", False)
+    open_score = 1.0 if open_to_work else 0.3
+    # 0.3 not 0 — passive candidates are still hirable
