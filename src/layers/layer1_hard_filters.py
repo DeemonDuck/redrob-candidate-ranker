@@ -89,3 +89,21 @@ def check_wrong_domain(candidate: dict) -> tuple[bool, str]:
         return True, "Primary domain is CV/speech/robotics with no NLP/IR exposure"
     return False, ""
 
+
+# ── Rule 4: Zero must-have skills ────────────────────────────────────────────
+
+"""Candidate has no overlap with JD's core skill list at all."""
+
+def check_zero_must_have_skills(candidate: dict) -> tuple[bool, str]:
+    
+    skills = _skill_names(candidate)
+    career_text = _all_career_text(candidate)
+
+    # Check skills list AND career text (Tier 5 candidates may not list skills formally)
+    matched = skills & MUST_HAVE_SKILLS
+    career_match = any(kw in career_text for kw in MUST_HAVE_SKILLS)
+
+    if not matched and not career_match:
+        return True, "Zero must-have skills matched in skills list or career history"
+    return False, ""
+
