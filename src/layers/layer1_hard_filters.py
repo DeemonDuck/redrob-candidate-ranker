@@ -136,3 +136,29 @@ def check_pure_research_no_production(candidate: dict) -> tuple[bool, str]:
         return True, "Pure research/academic background with no production deployment signals"
     return False, ""
 
+
+# ── Rule 6: Recent LLM wrapper only, no pre-LLM ML background ────────────────
+
+"""
+JD: <12 months AI experience = only LangChain/OpenAI wrappers,
+no pre-LLM production ML → disqualifier.
+"""
+
+def check_llm_wrapper_only(candidate: dict) -> tuple[bool, str]:
+
+    skills = _skill_names(candidate)
+    career_text = _all_career_text(candidate)
+
+    has_llm_wrapper = bool(skills & LLM_WRAPPER_ONLY_SKILLS)
+    has_pre_llm_signal = any(kw in career_text for kw in {
+        "search", "retrieval", "ranking", "recommendation",
+        "embedding", "bm25", "index", "classification",
+        "regression", "tensorflow", "pytorch", "keras",
+        "sklearn", "scikit", "xgboost", "lightgbm",
+    })
+
+    # Only a disqualifier when LLM wrappers are the ONLY signal AND no pre-LLM work
+    if has_llm_wrapper and not has_pre_llm_signal:
+        return True, "AI skills appear limited to LLM wrappers (LangChain/OpenAI) with no pre-LLM ML background"
+    return False, ""
+
