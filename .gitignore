@@ -18,6 +18,7 @@ Thumbs.db
 
 # Data
 *.jsonl
+data/
 *.csv
 
 # Logs
