@@ -82,3 +82,16 @@ def get_availability_score(candidate: dict) -> float:
     open_to_work = signals.get("open_to_work_flag", False)
     open_score = 1.0 if open_to_work else 0.3
     # 0.3 not 0 — passive candidates are still hirable
+
+     # 2. Recency — last active date (weight: 0.30)
+    months_inactive = _months_since(signals.get("last_active_date", ""))
+    if months_inactive <= 1:
+        recency_score = 1.0
+    elif months_inactive <= 3:
+        recency_score = 0.8
+    elif months_inactive <= 6:
+        recency_score = 0.5
+    elif months_inactive <= 12:
+        recency_score = 0.2
+    else:
+        recency_score = 0.05  # over a year inactive — basically unreachable
