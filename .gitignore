@@ -29,3 +29,7 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Document Files
+*.docx
+REDROB_HAKATHON_DATA_FROM_WEBSITE/

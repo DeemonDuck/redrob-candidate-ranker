@@ -7,7 +7,7 @@ from src.layers.layer1_honeypot import apply_honeypot_check
 
 passed, eliminated, honeypots = [], [], []
 
-with gzip.open("data/candidates.jsonl.gz", "rt") as f:
+with open("data/candidates.jsonl", encoding="utf-8") as f:
     for line in tqdm(f, total=100000):
         c = json.loads(line)
         
