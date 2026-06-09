@@ -35,3 +35,9 @@ data/
 *.docx
 REDROB_HAKATHON_DATA_FROM_WEBSITE/
 WORD_FILES_MADE_FOR_TRACKING/
+
+# ML models
+models/
+
+# Cached embeddings
+*.npy
