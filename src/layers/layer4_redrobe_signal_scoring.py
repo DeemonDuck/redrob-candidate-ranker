@@ -174,3 +174,39 @@ def score_experience(candidate: dict) -> float:
         return 0.1
 
 
+
+
+# ── A4: Education score ───────────────────────────────────────────────
+ 
+RELEVANT_FIELDS = {
+    "computer science", "computer engineering", "software engineering",
+    "artificial intelligence", "machine learning", "data science",
+    "statistics", "mathematics", "information technology",
+    "electronics", "ece", "electrical engineering",
+}
+ 
+TIER_MAP = {"tier_1": 1.0, "tier_2": 0.75, "tier_3": 0.5, "tier_4": 0.25, "unknown": 0.4}
+ 
+def score_education(candidate: dict) -> float:
+    """
+    Low weight feature — JD never mentions education as a criterion.
+    Relevant degree (0.6 weight) + institution tier (0.4 weight).
+    """
+    education = candidate.get("education", [])
+    if not education:
+        return 0.3  # no info, don't penalise heavily
+ 
+    # Take best education entry
+    best_tier = 0.0
+    relevant_degree = False
+ 
+    for edu in education:
+        field = _norm(edu.get("field_of_study", ""))
+        tier = TIER_MAP.get(edu.get("tier", "unknown"), 0.4)
+        best_tier = max(best_tier, tier)
+ 
+        if any(f in field for f in RELEVANT_FIELDS):
+            relevant_degree = True
+ 
+    degree_score = 1.0 if relevant_degree else 0.4
+    return round(0.6 * degree_score + 0.4 * best_tier, 4)
