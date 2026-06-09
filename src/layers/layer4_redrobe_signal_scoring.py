@@ -245,3 +245,82 @@ def compute_profile_score(candidate: dict) -> dict:
     }
  
 
+# ═══════════════════════════════════════════════════════════════════════
+# PART B — BEHAVIORAL MULTIPLIER (redrob signals)
+# ═══════════════════════════════════════════════════════════════════════
+ 
+def compute_behavioral_multiplier(candidate: dict) -> dict:
+    """
+    Uses remaining redrob signals not consumed by Layer 3.
+    Returns a multiplier in [0.2, 1.0] — never zeros out a good profile,
+    but can heavily down-weight an unreachable/unverified candidate.
+ 
+    Signals used:
+      - github_activity_score       (credibility)
+      - interview_completion_rate   (reliability)
+      - offer_acceptance_rate       (reliability)
+      - profile_completeness_score  (seriousness)
+      - verified_email + phone      (identity trust)
+      - linkedin_connected          (identity trust)
+      - applications_submitted_30d  (active job seeking)
+      - saved_by_recruiters_30d     (market validation)
+    """
+    s = candidate.get("redrob_signals", {})
+ 
+    # 1. Credibility — github activity (0.25 weight)
+    github = s.get("github_activity_score", -1)
+    if github == -1:
+        github_score = 0.5   # no github — neutral, not penalised heavily
+    else:
+        github_score = github / 100
+ 
+    # 2. Reliability — interview completion (0.20 weight)
+    icr = s.get("interview_completion_rate", 0.5)
+    interview_score = icr  # already 0–1
+ 
+    # 3. Reliability — offer acceptance (0.15 weight)
+    oar = s.get("offer_acceptance_rate", -1)
+    if oar == -1:
+        offer_score = 0.5   # no history — neutral
+    else:
+        offer_score = max(oar, 0)  # -1 already handled above
+ 
+    # 4. Profile seriousness (0.15 weight)
+    completeness = s.get("profile_completeness_score", 50) / 100
+    verified = (
+        int(s.get("verified_email", False)) +
+        int(s.get("verified_phone", False)) +
+        int(s.get("linkedin_connected", False))
+    ) / 3
+    seriousness_score = 0.5 * completeness + 0.5 * verified
+ 
+    # 5. Active job seeking (0.15 weight)
+    apps = min(s.get("applications_submitted_30d", 0), 10) / 10
+    saved = min(s.get("saved_by_recruiters_30d", 0), 10) / 10
+    active_score = 0.5 * apps + 0.5 * saved
+ 
+    # 6. Market validation — saved by recruiters (0.10 weight)
+    # Already folded into active_score above
+ 
+    behavioral_raw = (
+        0.25 * github_score +
+        0.20 * interview_score +
+        0.15 * offer_score +
+        0.15 * seriousness_score +
+        0.15 * active_score +
+        0.10 * verified   # double-weighting identity trust slightly
+    )
+ 
+    # Floor at 0.2 — never completely zero out a good profile
+    behavioral_multiplier = max(round(behavioral_raw, 4), 0.2)
+ 
+    return {
+        "github_score":       round(github_score, 4),
+        "interview_score":    round(interview_score, 4),
+        "offer_score":        round(offer_score, 4),
+        "seriousness_score":  round(seriousness_score, 4),
+        "active_score":       round(active_score, 4),
+        "behavioral_multiplier": behavioral_multiplier,
+    }
+
+
