@@ -84,6 +84,8 @@ def score_skills(candidate: dict) -> float:
     return round(0.70 * must_score + 0.30 * nice_score, 4)
 
 
+
+
 # ── A2: Career score ──────────────────────────────────────────────────
  
 PRODUCT_INDUSTRIES = {
@@ -146,3 +148,29 @@ def score_career(candidate: dict) -> float:
     title_score = 1.0 if any(kw in current_title for kw in AI_TITLE_KEYWORDS) else 0.3
  
     return round(0.5 * product_ratio + 0.3 * ai_ratio + 0.2 * title_score, 4)
+
+
+
+# ── A3: Experience score ──────────────────────────────────────────────
+ 
+def score_experience(candidate: dict) -> float:
+    """
+    JD sweet spot: 5–9 years. Soft penalties outside that range.
+    Not a hard cutoff — "some people hit senior judgment at 4 years."
+    """
+    yoe = candidate.get("profile", {}).get("years_of_experience", 0)
+ 
+    if 5 <= yoe <= 9:
+        return 1.0
+    elif 4 <= yoe < 5:
+        return 0.8
+    elif 9 < yoe <= 12:
+        return 0.75
+    elif 3 <= yoe < 4:
+        return 0.5   # Layer 1 floor is 3; 3-4 is weak but alive
+    elif yoe > 12:
+        return 0.5   # Over-experienced, possible mismatch
+    else:
+        return 0.1
+
+
