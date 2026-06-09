@@ -9,7 +9,7 @@ sys.path.insert(0, '.')
 
 from src.layers.layer1_hard_filters import apply_layer1
 from src.layers.layer1_honeypot import apply_honeypot_check
-from src.layers.layer2_soft_filters import apply_layer2
+from layers.layer2_soft_filters import apply_layer2
 
 honeypots = []
 layer1_eliminated = []
