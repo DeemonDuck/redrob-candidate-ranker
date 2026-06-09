@@ -157,4 +157,38 @@ def generate_reasoning(candidate: dict, scored: dict, rank: int, original_data: 
         sentence2 = f"Located in {location}; {'; '.join(concerns)}."
  
     return f"{sentence1} {sentence2}"
+
+
+
+# ── Top-100 CSV builder ───────────────────────────────────────────────────────
  
+def build_top100(
+    reranked: list[dict],
+    original_lookup: dict[str, dict],
+) -> list[dict]:
+    """
+    Takes reranked list, returns top 100 rows ready for CSV output.
+    Scores are normalised to [0, 1] and guaranteed non-increasing.
+    """
+    top100 = reranked[:100]
+ 
+    # Normalise lgbm_scores to 0-1 range
+    raw_scores = [c["lgbm_score"] for c in top100]
+    min_s, max_s = min(raw_scores), max(raw_scores)
+    score_range = max_s - min_s if max_s != min_s else 1.0
+ 
+    rows = []
+    for rank, c in enumerate(top100, start=1):
+        cid = c["candidate_id"]
+        normalised = round((c["lgbm_score"] - min_s) / score_range, 6)
+        original = original_lookup.get(cid, {})
+        reasoning = generate_reasoning(c, c, rank, original)
+ 
+        rows.append({
+            "candidate_id": cid,
+            "rank":         rank,
+            "score":        normalised,
+            "reasoning":    reasoning,
+        })
+ 
+    return rows
