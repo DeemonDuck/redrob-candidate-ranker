@@ -210,3 +210,38 @@ def score_education(candidate: dict) -> float:
  
     degree_score = 1.0 if relevant_degree else 0.4
     return round(0.6 * degree_score + 0.4 * best_tier, 4)
+
+
+
+
+# ── Composite profile score ───────────────────────────────────────────
+ 
+PROFILE_WEIGHTS = {
+    "skills":     0.40,   # most important — JD is skills-heavy
+    "career":     0.35,   # product co + AI role history
+    "experience": 0.15,   # years matter but not decisive
+    "education":  0.10,   # low weight — JD never mandates it
+}
+ 
+def compute_profile_score(candidate: dict) -> dict:
+    skills_s     = score_skills(candidate)
+    career_s     = score_career(candidate)
+    experience_s = score_experience(candidate)
+    education_s  = score_education(candidate)
+ 
+    profile_score = (
+        PROFILE_WEIGHTS["skills"]     * skills_s +
+        PROFILE_WEIGHTS["career"]     * career_s +
+        PROFILE_WEIGHTS["experience"] * experience_s +
+        PROFILE_WEIGHTS["education"]  * education_s
+    )
+ 
+    return {
+        "skills_score":     skills_s,
+        "career_score":     career_s,
+        "experience_score": experience_s,
+        "education_score":  education_s,
+        "profile_score":    round(profile_score, 4),
+    }
+ 
+
