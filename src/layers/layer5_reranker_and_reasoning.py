@@ -76,4 +76,19 @@ def train(scored_candidates: list[dict], save: bool = True) -> lgb.Booster:
  
 def load_model() -> lgb.Booster:
     return lgb.Booster(model_file=str(MODEL_PATH))
+
+
+
+# ── Re-ranking ────────────────────────────────────────────────────────────────
  
+def rerank(scored_candidates: list[dict], model: lgb.Booster) -> list[dict]:
+    """
+    Re-score candidates using LightGBM, return sorted list.
+    """
+    features = np.array([[c[f] for f in FEATURE_COLS] for c in scored_candidates])
+    lgbm_scores = model.predict(features)
+ 
+    for i, c in enumerate(scored_candidates):
+        c["lgbm_score"] = round(float(lgbm_scores[i]), 6)
+ 
+    return sorted(scored_candidates, key=lambda x: x["lgbm_score"], reverse=True)
