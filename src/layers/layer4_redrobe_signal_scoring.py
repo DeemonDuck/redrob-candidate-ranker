@@ -251,79 +251,68 @@ def compute_profile_score(candidate: dict) -> dict:
  
 def compute_behavioral_multiplier(candidate: dict) -> dict:
     """
-    Uses remaining redrob signals not consumed by Layer 3.
-    Returns a multiplier in [0.2, 1.0] — never zeros out a good profile,
-    but can heavily down-weight an unreachable/unverified candidate.
+    Behavioral multiplier — JD-grounded signals only.
+    Returns multiplier in [0.2, 1.0].
  
-    Signals used:
-      - github_activity_score       (credibility)
-      - interview_completion_rate   (reliability)
-      - offer_acceptance_rate       (reliability)
-      - profile_completeness_score  (seriousness)
-      - verified_email + phone      (identity trust)
-      - linkedin_connected          (identity trust)
-      - applications_submitted_30d  (active job seeking)
-      - saved_by_recruiters_30d     (market validation)
+    Removed: salary_score (no band in JD), market_interest_score (redundant),
+             work_mode_score (JD explicitly doesn't care about office days)
+    Skipped: signup_date (not predictive), connection_count (gameable)
     """
     s = candidate.get("redrob_signals", {})
  
-    # 1. Credibility — github activity (0.25 weight)
+    # 1. github activity (0.25) — JD explicitly values open-source
     github = s.get("github_activity_score", -1)
-    if github == -1:
-        github_score = 0.5   # no github — neutral, not penalised heavily
-    else:
-        github_score = github / 100
+    github_score = 0.5 if github == -1 else github / 100
  
-    # 2. Reliability — interview completion (0.20 weight)
-    icr = s.get("interview_completion_rate", 0.5)
-    interview_score = icr  # already 0–1
+    # 2. interview completion (0.20) — will they show up
+    interview_score = s.get("interview_completion_rate", 0.5)
  
-    # 3. Reliability — offer acceptance (0.15 weight)
+    # 3. response speed (0.20) — JD wants active reachable candidate
+    avg_rt = s.get("avg_response_time_hours", 48)
+    if avg_rt <= 4:     response_speed_score = 1.0
+    elif avg_rt <= 24:  response_speed_score = 0.8
+    elif avg_rt <= 72:  response_speed_score = 0.5
+    else:               response_speed_score = 0.2
+ 
+    # 4. offer acceptance (0.10)
     oar = s.get("offer_acceptance_rate", -1)
-    if oar == -1:
-        offer_score = 0.5   # no history — neutral
-    else:
-        offer_score = max(oar, 0)  # -1 already handled above
+    offer_score = 0.5 if oar == -1 else max(oar, 0)
  
-    # 4. Profile seriousness (0.15 weight)
+    # 5. seriousness — completeness + identity + endorsements (0.12)
     completeness = s.get("profile_completeness_score", 50) / 100
-    verified = (
-        int(s.get("verified_email", False)) +
-        int(s.get("verified_phone", False)) +
-        int(s.get("linkedin_connected", False))
-    ) / 3
-    seriousness_score = 0.5 * completeness + 0.5 * verified
+    verified = (int(s.get("verified_email", False)) +
+                int(s.get("verified_phone", False)) +
+                int(s.get("linkedin_connected", False))) / 3
+    endorsements = min(s.get("endorsements_received", 0), 100) / 100
+    seriousness_score = 0.4 * completeness + 0.4 * verified + 0.2 * endorsements
  
-    # 5. Active job seeking (0.15 weight)
+    # 6. active job seeking — apps + saved by recruiters (0.13)
+    # JD wants candidates active on Redrob platform
     apps = min(s.get("applications_submitted_30d", 0), 10) / 10
     saved = min(s.get("saved_by_recruiters_30d", 0), 10) / 10
     active_score = 0.5 * apps + 0.5 * saved
  
-    # 6. Market validation — saved by recruiters (0.10 weight)
-    # Already folded into active_score above
- 
     behavioral_raw = (
         0.25 * github_score +
         0.20 * interview_score +
-        0.15 * offer_score +
-        0.15 * seriousness_score +
-        0.15 * active_score +
-        0.10 * verified   # double-weighting identity trust slightly
+        0.20 * response_speed_score +
+        0.10 * offer_score +
+        0.12 * seriousness_score +
+        0.13 * active_score
     )
  
-    # Floor at 0.2 — never completely zero out a good profile
     behavioral_multiplier = max(round(behavioral_raw, 4), 0.2)
  
     return {
-        "github_score":       round(github_score, 4),
-        "interview_score":    round(interview_score, 4),
-        "offer_score":        round(offer_score, 4),
-        "seriousness_score":  round(seriousness_score, 4),
-        "active_score":       round(active_score, 4),
+        "github_score":         round(github_score, 4),
+        "interview_score":      round(interview_score, 4),
+        "response_speed_score": round(response_speed_score, 4),
+        "offer_score":          round(offer_score, 4),
+        "seriousness_score":    round(seriousness_score, 4),
+        "active_score":         round(active_score, 4),
         "behavioral_multiplier": behavioral_multiplier,
     }
-
-
+ 
 # ═══════════════════════════════════════════════════════════════════════
 # MASTER FUNCTION
 # ═══════════════════════════════════════════════════════════════════════
