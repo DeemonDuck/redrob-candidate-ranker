@@ -192,3 +192,40 @@ def build_top100(
         })
  
     return rows
+
+
+# ── Master pipeline ───────────────────────────────────────────────────────────
+ 
+def run_layer5(
+    scored_candidates: list[dict],
+    original_lookup: dict[str, dict],
+    retrain: bool = True,
+) -> list[dict]:
+    """
+    Full Layer 5 pipeline:
+      1. Train (or load) LightGBM ranker
+      2. Re-rank scored candidates
+      3. Build top-100 with reasoning
+ 
+    Args:
+        scored_candidates : list of dicts from apply_layer4()
+        original_lookup   : {candidate_id: raw_candidate_dict} for reasoning
+        retrain           : if False, loads saved model instead of retraining
+ 
+    Returns:
+        list of 100 dicts ready to write as CSV
+    """
+    if retrain or not MODEL_PATH.exists():
+        print(f"Training LightGBM on {len(scored_candidates)} candidates...")
+        model = train(scored_candidates)
+    else:
+        print("Loading saved model...")
+        model = load_model()
+ 
+    print("Re-ranking...")
+    reranked = rerank(scored_candidates, model)
+ 
+    print("Building top-100 with reasoning...")
+    top100 = build_top100(reranked, original_lookup)
+ 
+    return top100
