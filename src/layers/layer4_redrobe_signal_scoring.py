@@ -324,3 +324,39 @@ def compute_behavioral_multiplier(candidate: dict) -> dict:
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# MASTER FUNCTION
+# ═══════════════════════════════════════════════════════════════════════
+ 
+def apply_layer4(candidate: dict, location_score: float, availability_score: float) -> dict:
+    """
+    Combines profile score + location + availability + behavioral multiplier
+    into a single final_score.
+ 
+    final_score = (profile_score * 0.70 + location_score * 0.15 + availability_score * 0.15)
+                  * behavioral_multiplier
+ 
+    Returns full feature dict for Layer 5 (LightGBM re-ranker).
+    """
+    profile   = compute_profile_score(candidate)
+    behavioral = compute_behavioral_multiplier(candidate)
+ 
+    base_score = (
+        0.70 * profile["profile_score"] +
+        0.15 * location_score +
+        0.15 * availability_score
+    )
+ 
+    final_score = round(base_score * behavioral["behavioral_multiplier"], 4)
+ 
+    return {
+        "candidate_id": candidate["candidate_id"],
+        # Component scores
+        **profile,
+        **behavioral,
+        "location_score":      location_score,
+        "availability_score":  availability_score,
+        # Final
+        "base_score":          round(base_score, 4),
+        "final_score":         final_score,
+    }
