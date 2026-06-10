@@ -41,3 +41,6 @@ models/
 
 # Cached embeddings
 *.npy
+
+# Candidates_Reports 
+candidate_reports/
