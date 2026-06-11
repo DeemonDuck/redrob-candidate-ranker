@@ -1,59 +1,52 @@
-# test_layer2.py
-
 import json
-import sys
 from collections import Counter
-from tqdm import tqdm
+from src.layers.layer2_soft_filters import apply_layer2
 
-sys.path.insert(0, '.')
+INPUT_FILE = "data/candidates.jsonl"
 
-from src.layers.layer1_hard_filters import apply_layer1
-from src.layers.layer1_honeypot import apply_honeypot_check
-from layers.layer2_soft_filters import apply_layer2
+scores = []
+eliminated = 0
+reasons = Counter()
 
-honeypots = []
-layer1_eliminated = []
-layer2_eliminated = []
-survivors = []
+top_candidates = []
+bottom_candidates = []
 
-with open("data/candidates.jsonl", "r", encoding="utf-8") as f:
-    for line in tqdm(f, total=100000):
+with open(INPUT_FILE, "r", encoding="utf-8") as f:
+    for line in f:
         candidate = json.loads(line)
 
-        # Honeypot check
-        is_hp, hp_reason = apply_honeypot_check(candidate)
-        if is_hp:
-            honeypots.append((candidate["candidate_id"], hp_reason))
-            continue
+        is_eliminated, reason, score = apply_layer2(candidate)
 
-        # Layer 1
-        disq1, reason1 = apply_layer1(candidate)
-        if disq1:
-            layer1_eliminated.append((candidate["candidate_id"], reason1))
-            continue
+        if is_eliminated:
+            eliminated += 1
+            reasons[reason] += 1
 
-        # Layer 2
-        disq2, reason2 = apply_layer2(candidate)
-        if disq2:
-            layer2_eliminated.append((candidate["candidate_id"], reason2))
-            continue
+        scores.append(
+            (
+                candidate["candidate_id"],
+                candidate.get("profile", {}).get("current_title", ""),
+                score,
+            )
+        )
 
-        survivors.append(candidate["candidate_id"])
+scores.sort(key=lambda x: x[2], reverse=True)
 
-print("\n===== PIPELINE SUMMARY =====")
-print(f"Honeypots         : {len(honeypots)}")
-print(f"Layer 1 Removed   : {len(layer1_eliminated)}")
-print(f"Layer 2 Removed   : {len(layer2_eliminated)}")
-print(f"Remaining         : {len(survivors)}")
+print("\n===== LAYER 2 SUMMARY =====")
+print(f"Candidates processed : {len(scores):,}")
+print(f"Eliminated           : {eliminated:,}")
+print(f"Average score        : {sum(s[2] for s in scores)/len(scores):.4f}")
+print(f"Max score            : {scores[0][2]:.4f}")
+print(f"Min score            : {scores[-1][2]:.4f}")
 
-print("\n===== LAYER 2 ELIMINATION REASONS =====")
+print("\n===== TOP 20 SCORES =====")
+for cid, title, score in scores[:20]:
+    print(f"{cid} | {title} | score={score:.4f}")
 
-reason_counts = Counter(reason for _, reason in layer2_eliminated)
+print("\n===== BOTTOM 20 SCORES =====")
+for cid, title, score in scores[-20:]:
+    print(f"{cid} | {title} | score={score:.4f}")
 
-for reason, count in reason_counts.most_common():
-    print(f"{count:>6}  {reason}")
-
-print("\n===== SAMPLE SURVIVORS =====")
-
-for cid in survivors[:20]:
-    print(cid)
+if reasons:
+    print("\n===== ELIMINATION REASONS =====")
+    for reason, count in reasons.most_common():
+        print(f"{count:5d} | {reason}")

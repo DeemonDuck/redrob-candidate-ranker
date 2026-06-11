@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from tqdm import tqdm
 
-from src.layers.layer1_honeypot2 import apply_honeypot_check
+from layers.layer1_honeypot import apply_honeypot_check
 
 
 DATA_PATH = "data/candidates.jsonl"   # change if needed
