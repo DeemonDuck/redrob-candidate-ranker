@@ -7,18 +7,18 @@ TIER_1_CITIES = {
     "pune", "noida"
 }
  
-# Score 0.8 — explicitly welcomed
+# Score 0.9 — explicitly welcomed
 TIER_2_CITIES = {
     "hyderabad", "mumbai", "delhi", "delhi ncr",
     "gurgaon", "gurugram", "bengaluru", "bangalore",
     "new delhi", "faridabad", "ghaziabad"
 }
  
-# Score 0.5 — India but not preferred cities
+# Score 0.8 — India but not preferred cities
 TIER_3_COUNTRY = "india"
  
-# Score 0.2 — outside India but willing to relocate
-# Score 0.05 — outside India, not willing to relocate
+# Score 0.65 — outside India but willing to relocate
+# Score 0.4 — outside India, not willing to relocate
  
  
 def get_location_score(candidate: dict) -> float:
@@ -39,17 +39,17 @@ def get_location_score(candidate: dict) -> float:
  
     # Check tier 2 cities
     if any(city in location for city in TIER_2_CITIES):
-        return 0.8
+        return 0.9
  
     # Other Indian cities
     if country == TIER_3_COUNTRY or "india" in location:
-        return 0.5
+        return 0.8
  
     # Outside India
     if willing_to_relocate:
-        return 0.2
+        return 0.65
  
-    return 0.05
+    return 0.4
 
 
 # ── Availability scoring ──────────────────────────────────────────────────────
@@ -80,8 +80,8 @@ def get_availability_score(candidate: dict) -> float:
  
     # 1. Open to work (weight: 0.35)
     open_to_work = signals.get("open_to_work_flag", False)
-    open_score = 1.0 if open_to_work else 0.3
-    # 0.3 not 0 — passive candidates are still hirable
+    open_score = 1.0 if open_to_work else 0.4
+    # 0.4 not 0 — passive candidates are still hirable
 
      # 2. Recency — last active date (weight: 0.30)
     months_inactive = _months_since(signals.get("last_active_date", ""))
@@ -90,9 +90,9 @@ def get_availability_score(candidate: dict) -> float:
     elif months_inactive <= 3:
         recency_score = 0.8
     elif months_inactive <= 6:
-        recency_score = 0.5
+        recency_score = 0.6
     elif months_inactive <= 12:
-        recency_score = 0.2
+        recency_score = 0.3
     else:
         recency_score = 0.05  # over a year inactive — basically unreachable
 
@@ -102,11 +102,11 @@ def get_availability_score(candidate: dict) -> float:
     if notice_days <= 30:
         notice_score = 1.0   # JD: "love sub-30, can buy out up to 30"
     elif notice_days <= 60:
-        notice_score = 0.6
+        notice_score = 0.8
     elif notice_days <= 90:
-        notice_score = 0.3   # JD: "still in scope but bar gets higher"
+        notice_score = 0.65   # JD: "still in scope but bar gets higher"
     else:
-        notice_score = 0.1   # 90+ days is a real logistical problem
+        notice_score = 0.3   # 90+ days is a real logistical problem
 
     
      # 4. Recruiter response rate (weight: 0.15)
