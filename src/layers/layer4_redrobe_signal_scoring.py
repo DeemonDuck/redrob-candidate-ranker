@@ -1,311 +1,207 @@
+"""
+layer4_scoring.py
+
+LAYER 4 — REDROB PLATFORM SIGNALS
+
+Purpose:
+    Score candidate quality using Redrob behavioural signals only.
+
+Inputs:
+    - layer2_score
+    - location_score
+    - availability_score
+
+Outputs:
+    - redrob_score
+    - final_score
+
+No JD-fit scoring here.
+No skills scoring.
+No career scoring.
+
+Those already exist in Layer 2.
+"""
+
 from datetime import date, datetime
-from src.utils.constants import MUST_HAVE_SKILLS, PURE_SERVICES_COMPANIES
 
-# ── helpers ───────────────────────────────────────────────────────────────────
 
-def _norm(text: str) -> str:
-    return text.lower().strip()
-
-def _career_text(candidate: dict) -> str:
-    parts = []
-    for job in candidate.get("career_history", []):
-        parts.append(_norm(job.get("title", "")))
-        parts.append(_norm(job.get("description", "")))
-    return " ".join(parts)
+# ═══════════════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════════════
 
 def _months_since(date_str: str) -> int:
     if not date_str:
         return 999
+
     try:
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         today = date.today()
-        return (today.year - d.year) * 12 + (today.month - d.month)
+
+        return (
+            (today.year - d.year) * 12
+            + (today.month - d.month)
+        )
+
     except ValueError:
         return 999
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# PART A — PROFILE SCORING
+# REDROB SCORE
 # ═══════════════════════════════════════════════════════════════════════
 
-# ── A1: Skills score ──────────────────────────────────────────────────
-
-NICE_TO_HAVE_SKILLS = {
-    "lora", "qlora", "peft", "fine-tuning", "finetuning",
-    "learning to rank", "ltr", "xgboost", "lightgbm",
-    "hr tech", "recruiting", "marketplace",
-    "distributed systems", "inference optimization",
-    "open source", "pytorch", "tensorflow",
+REDROB_WEIGHTS = {
+    "github":       0.12,
+    "interview":    0.25,
+    "response":     0.20,
+    "offer":        0.05,
+    "seriousness":  0.15,
+    "saved":        0.18,
+    "applications": 0.05,
 }
 
-def score_skills(candidate: dict) -> float:
+
+def compute_redrob_score(candidate: dict) -> dict:
     """
-    Weighted skill match.
-    Must-have skills (trusted) = 70% weight
-    Nice-to-have skills        = 30% weight
+    Returns Redrob behavioural score.
 
-    Trust = endorsements > 0 OR duration_months > 6 OR in career text OR has assessment
+    Components:
+
+    - github activity
+    - interview completion
+    - response speed
+    - offer acceptance
+    - profile seriousness
+    - recruiter saves
+    - applications submitted
     """
-    skills = candidate.get("skills", [])
-    assessment_scores = candidate.get("redrob_signals", {}).get("skill_assessment_scores", {})
-    career_text = _career_text(candidate)
 
-    must_have_hits = 0
-    must_have_total = len(MUST_HAVE_SKILLS)
-
-    nice_have_hits = 0
-    nice_have_total = len(NICE_TO_HAVE_SKILLS)
-
-    for skill in skills:
-        name = _norm(skill["name"])
-        trusted = (
-            skill.get("endorsements", 0) > 0
-            or skill.get("duration_months", 0) > 6
-            or skill["name"] in assessment_scores
-            or name in career_text
-        )
-
-        if not trusted:
-            continue
-
-        # Check must-have match (exact or partial)
-        if name in MUST_HAVE_SKILLS or any(mh in name or name in mh for mh in MUST_HAVE_SKILLS):
-            # Bonus: assessment score available → scale by quality
-            if skill["name"] in assessment_scores:
-                must_have_hits += assessment_scores[skill["name"]] / 100
-            else:
-                must_have_hits += 1.0
-
-        # Check nice-to-have
-        if name in NICE_TO_HAVE_SKILLS or any(nh in name or name in nh for nh in NICE_TO_HAVE_SKILLS):
-            nice_have_hits += 1.0
-
-    must_score = min(must_have_hits / max(5, 1), 1.0)   # cap at 5 must-haves = full score
-    nice_score = min(nice_have_hits / max(3, 1), 1.0)   # cap at 3 nice-to-haves = full score
-
-    return round(0.70 * must_score + 0.30 * nice_score, 4)
-
-
-# ── A2: Career score ──────────────────────────────────────────────────
-
-PRODUCT_INDUSTRIES = {
-    "food delivery", "fintech", "edtech", "healthtech", "ecommerce",
-    "saas", "ai/ml", "transportation", "marketplace", "gaming",
-    "media", "travel", "proptech", "insurtech",
-}
-SERVICES_INDUSTRIES = {"it services", "information technology", "consulting", "outsourcing"}
-LARGE_SIZES = {"1001-5000", "5001-10000", "10001+"}
-
-def score_career(candidate: dict) -> float:
-    """
-    Three components:
-      1. product_company_ratio  (0.5 weight) — JD strongly prefers product cos
-      2. ai_role_ratio          (0.3 weight) — time spent in actual AI/ML roles
-      3. title_relevance        (0.2 weight) — current title alignment with JD
-    """
-    history = candidate.get("career_history", [])
-    if not history:
-        return 0.0
-
-    total_months = sum(j.get("duration_months", 0) for j in history)
-    if total_months == 0:
-        return 0.0
-
-    product_months = 0
-    ai_months = 0
-
-    AI_TITLE_KEYWORDS = {
-        "ml", "machine learning", "ai", "nlp", "data science",
-        "recommendation", "search", "ranking", "retrieval",
-        "applied scientist", "research engineer"
-    }
-
-    for job in history:
-        duration = job.get("duration_months", 0)
-        industry = _norm(job.get("industry", ""))
-        company_name = _norm(job.get("company", ""))
-        title = _norm(job.get("title", ""))
-        description = _norm(job.get("description", ""))
-        company_size = job.get("company_size", "")
-
-        # Product company detection
-        is_services = (
-            company_name in PURE_SERVICES_COMPANIES
-            or (any(s in industry for s in SERVICES_INDUSTRIES) and company_size in LARGE_SIZES)
-        )
-        if not is_services:
-            product_months += duration
-
-        # AI role detection
-        if any(kw in title or kw in description for kw in AI_TITLE_KEYWORDS):
-            ai_months += duration
-
-    product_ratio = product_months / total_months
-    ai_ratio = min(ai_months / total_months, 1.0)
-
-    # Title relevance — current title
-    current_title = _norm(candidate.get("profile", {}).get("current_title", ""))
-    title_score = 1.0 if any(kw in current_title for kw in AI_TITLE_KEYWORDS) else 0.3
-
-    return round(0.5 * product_ratio + 0.3 * ai_ratio + 0.2 * title_score, 4)
-
-
-# ── A3: Experience score ──────────────────────────────────────────────
-
-def score_experience(candidate: dict) -> float:
-    """
-    JD sweet spot: 5–9 years. Soft penalties outside that range.
-    Not a hard cutoff — "some people hit senior judgment at 4 years."
-    """
-    yoe = candidate.get("profile", {}).get("years_of_experience", 0)
-
-    if 5 <= yoe <= 9:
-        return 1.0
-    elif 4 <= yoe < 5:
-        return 0.8
-    elif 9 < yoe <= 12:
-        return 0.75
-    elif 3 <= yoe < 4:
-        return 0.5   # Layer 1 floor is 3; 3-4 is weak but alive
-    elif yoe > 12:
-        return 0.5   # Over-experienced, possible mismatch
-    else:
-        return 0.1
-
-
-# ── A4: Education score ───────────────────────────────────────────────
-
-RELEVANT_FIELDS = {
-    "computer science", "computer engineering", "software engineering",
-    "artificial intelligence", "machine learning", "data science",
-    "statistics", "mathematics", "information technology",
-    "electronics", "ece", "electrical engineering",
-}
-
-TIER_MAP = {"tier_1": 1.0, "tier_2": 0.75, "tier_3": 0.5, "tier_4": 0.25, "unknown": 0.4}
-
-def score_education(candidate: dict) -> float:
-    """
-    Low weight feature — JD never mentions education as a criterion.
-    Relevant degree (0.6 weight) + institution tier (0.4 weight).
-    """
-    education = candidate.get("education", [])
-    if not education:
-        return 0.3  # no info, don't penalise heavily
-
-    # Take best education entry
-    best_tier = 0.0
-    relevant_degree = False
-
-    for edu in education:
-        field = _norm(edu.get("field_of_study", ""))
-        tier = TIER_MAP.get(edu.get("tier", "unknown"), 0.4)
-        best_tier = max(best_tier, tier)
-
-        if any(f in field for f in RELEVANT_FIELDS):
-            relevant_degree = True
-
-    degree_score = 1.0 if relevant_degree else 0.4
-    return round(0.6 * degree_score + 0.4 * best_tier, 4)
-
-
-# ── Composite profile score ───────────────────────────────────────────
-
-PROFILE_WEIGHTS = {
-    "skills":     0.40,   # most important — JD is skills-heavy
-    "career":     0.35,   # product co + AI role history
-    "experience": 0.15,   # years matter but not decisive
-    "education":  0.10,   # low weight — JD never mandates it
-}
-
-def compute_profile_score(candidate: dict) -> dict:
-    skills_s     = score_skills(candidate)
-    career_s     = score_career(candidate)
-    experience_s = score_experience(candidate)
-    education_s  = score_education(candidate)
-
-    profile_score = (
-        PROFILE_WEIGHTS["skills"]     * skills_s +
-        PROFILE_WEIGHTS["career"]     * career_s +
-        PROFILE_WEIGHTS["experience"] * experience_s +
-        PROFILE_WEIGHTS["education"]  * education_s
-    )
-
-    return {
-        "skills_score":     skills_s,
-        "career_score":     career_s,
-        "experience_score": experience_s,
-        "education_score":  education_s,
-        "profile_score":    round(profile_score, 4),
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# PART B — BEHAVIORAL MULTIPLIER (redrob signals)
-# ═══════════════════════════════════════════════════════════════════════
-
-def compute_behavioral_multiplier(candidate: dict) -> dict:
-    """
-    Behavioral multiplier — JD-grounded signals only.
-    Returns multiplier in [0.2, 1.0].
-
-    Removed: salary_score (no band in JD), market_interest_score (redundant),
-             work_mode_score (JD explicitly doesn't care about office days)
-    Skipped: signup_date (not predictive), connection_count (gameable)
-    """
     s = candidate.get("redrob_signals", {})
 
-    # 1. github activity (0.25) — JD explicitly values open-source
+    # --------------------------------------------------
+    # GitHub activity
+    # --------------------------------------------------
+
     github = s.get("github_activity_score", -1)
-    github_score = 0.5 if github == -1 else github / 100
 
-    # 2. interview completion (0.20) — will they show up
-    interview_score = s.get("interview_completion_rate", 0.5)
-
-    # 3. response speed (0.20) — JD wants active reachable candidate
-    avg_rt = s.get("avg_response_time_hours", 48)
-    if avg_rt <= 4:     response_speed_score = 1.0
-    elif avg_rt <= 24:  response_speed_score = 0.8
-    elif avg_rt <= 72:  response_speed_score = 0.5
-    else:               response_speed_score = 0.2
-
-    # 4. offer acceptance (0.10)
-    oar = s.get("offer_acceptance_rate", -1)
-    offer_score = 0.5 if oar == -1 else max(oar, 0)
-
-    # 5. seriousness — completeness + identity + endorsements (0.12)
-    completeness = s.get("profile_completeness_score", 50) / 100
-    verified = (int(s.get("verified_email", False)) +
-                int(s.get("verified_phone", False)) +
-                int(s.get("linkedin_connected", False))) / 3
-    endorsements = min(s.get("endorsements_received", 0), 100) / 100
-    seriousness_score = 0.4 * completeness + 0.4 * verified + 0.2 * endorsements
-
-    # 6. active job seeking — apps + saved by recruiters (0.13)
-    # JD wants candidates active on Redrob platform
-    apps = min(s.get("applications_submitted_30d", 0), 10) / 10
-    saved = min(s.get("saved_by_recruiters_30d", 0), 10) / 10
-    active_score = 0.5 * apps + 0.5 * saved
-
-    behavioral_raw = (
-        0.25 * github_score +
-        0.20 * interview_score +
-        0.20 * response_speed_score +
-        0.10 * offer_score +
-        0.12 * seriousness_score +
-        0.13 * active_score
+    github_score = (
+        0.5
+        if github == -1
+        else github / 100
     )
 
-    behavioral_multiplier = max(round(behavioral_raw, 4), 0.2)
+    # --------------------------------------------------
+    # Interview completion
+    # --------------------------------------------------
+
+    interview_score = s.get(
+        "interview_completion_rate",
+        0.5
+    )
+
+    # --------------------------------------------------
+    # Response speed
+    # --------------------------------------------------
+
+    avg_rt = s.get(
+        "avg_response_time_hours",
+        48
+    )
+
+    if avg_rt <= 4:
+        response_speed_score = 1.0
+
+    elif avg_rt <= 24:
+        response_speed_score = 0.8
+
+    elif avg_rt <= 72:
+        response_speed_score = 0.5
+
+    else:
+        response_speed_score = 0.2
+
+    # --------------------------------------------------
+    # Offer acceptance
+    # --------------------------------------------------
+
+    oar = s.get(
+        "offer_acceptance_rate",
+        -1
+    )
+
+    offer_score = (
+        0.5
+        if oar == -1
+        else max(oar, 0)
+    )
+
+    # --------------------------------------------------
+    # Seriousness
+    # --------------------------------------------------
+
+    completeness = (
+        s.get("profile_completeness_score", 50)
+        / 100
+    )
+
+    verified = (
+        int(s.get("verified_email", False))
+        + int(s.get("verified_phone", False))
+        + int(s.get("linkedin_connected", False))
+    ) / 3
+
+    endorsements = min(
+        s.get("endorsements_received", 0),
+        100
+    ) / 100
+
+    seriousness_score = (
+        0.4 * completeness +
+        0.4 * verified +
+        0.2 * endorsements
+    )
+
+    # --------------------------------------------------
+    # Recruiter saves
+    # --------------------------------------------------
+
+    saved_score = min(
+        s.get("saved_by_recruiters_30d", 0),
+        20
+    ) / 20
+
+    # --------------------------------------------------
+    # Applications
+    # --------------------------------------------------
+
+    applications_score = min(
+        s.get("applications_submitted_30d", 0),
+        20
+    ) / 20
+
+    # --------------------------------------------------
+    # Final Redrob score
+    # --------------------------------------------------
+
+    redrob_score = (
+        REDROB_WEIGHTS["github"]       * github_score +
+        REDROB_WEIGHTS["interview"]    * interview_score +
+        REDROB_WEIGHTS["response"]     * response_speed_score +
+        REDROB_WEIGHTS["offer"]        * offer_score +
+        REDROB_WEIGHTS["seriousness"]  * seriousness_score +
+        REDROB_WEIGHTS["saved"]        * saved_score +
+        REDROB_WEIGHTS["applications"] * applications_score
+    )
 
     return {
-        "github_score":         round(github_score, 4),
-        "interview_score":      round(interview_score, 4),
+        "github_score": round(github_score, 4),
+        "interview_score": round(interview_score, 4),
         "response_speed_score": round(response_speed_score, 4),
-        "offer_score":          round(offer_score, 4),
-        "seriousness_score":    round(seriousness_score, 4),
-        "active_score":         round(active_score, 4),
-        "behavioral_multiplier": behavioral_multiplier,
+        "offer_score": round(offer_score, 4),
+        "seriousness_score": round(seriousness_score, 4),
+        "saved_score": round(saved_score, 4),
+        "applications_score": round(applications_score, 4),
+        "redrob_score": round(redrob_score, 4),
     }
 
 
@@ -313,37 +209,37 @@ def compute_behavioral_multiplier(candidate: dict) -> dict:
 # MASTER FUNCTION
 # ═══════════════════════════════════════════════════════════════════════
 
-def apply_layer4(candidate: dict, location_score: float, availability_score: float, semantic_score: float = 0.0) -> dict:
+def apply_layer4(
+    candidate: dict,
+    location_score: float,
+    availability_score: float,
+    layer2_score: float,
+) -> dict:
     """
-    Combines profile score + location + availability + behavioral multiplier
-    into a single final_score.
+    Layer 4 final score.
 
-    final_score = (profile_score * 0.60 + semantic_score * 0.15 + location_score * 0.125 + availability_score * 0.125)
-                  * behavioral_multiplier
-
-    Returns full feature dict for Layer 5 (LightGBM re-ranker).
+    Layer 2 = JD fit
+    Layer 3 = location + availability
+    Layer 4 = Redrob behavioural signals
     """
-    profile   = compute_profile_score(candidate)
-    behavioral = compute_behavioral_multiplier(candidate)
 
-    base_score = (
-        0.60 * profile["profile_score"] +
-        0.15 * semantic_score +
-        0.125 * location_score +
-        0.125 * availability_score
+    redrob = compute_redrob_score(candidate)
+
+    final_score = (
+        0.65 * layer2_score +
+        0.10 * location_score +
+        0.10 * availability_score +
+        0.15 * redrob["redrob_score"]
     )
-
-    final_score = round(base_score * behavioral["behavioral_multiplier"], 4)
 
     return {
         "candidate_id": candidate["candidate_id"],
-        # Component scores
-        **profile,
-        **behavioral,
-        "location_score":      location_score,
-        "availability_score":  availability_score,
-        # Final
-        "semantic_score":      round(semantic_score, 4),
-        "base_score":          round(base_score, 4),
-        "final_score":         final_score,
+
+        "layer2_score": round(layer2_score, 4),
+        "location_score": round(location_score, 4),
+        "availability_score": round(availability_score, 4),
+
+        **redrob,
+
+        "final_score": round(final_score, 4),
     }
