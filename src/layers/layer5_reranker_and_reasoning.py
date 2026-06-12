@@ -24,7 +24,7 @@ Tie-breaking rule (spec §3):
     - Equal scores → candidate_id ascending (CAND_XXXXXXX string sort)
     - This is deterministic and matches validate_submission.py expectations
 """
-
+import numpy as np
 from src.utils.constants import MUST_HAVE_SKILLS
 from src.utils.sbert_similarity import load_model, get_jd_embedding, compute_semantic_scores
 
@@ -117,12 +117,12 @@ def _sbert_hint(semantic_score: float) -> str:
     """
     # NOTE: These thresholds are for reasoning labels only.
     #       Change them freely — they have zero effect on ranking.
-    if semantic_score >= 0.55:
+    if semantic_score >= 0.70:
         return "strong semantic alignment with JD"
-    elif semantic_score >= 0.40:
-        return "moderate semantic alignment with JD"
-    elif semantic_score >= 0.25:
-        return "partial semantic overlap with JD"
+    elif semantic_score >= 0.50:
+        return "good semantic alignment with JD"
+    elif semantic_score >= 0.30:
+        return "some semantic overlap with JD"
     else:
         return "low semantic alignment (keyword gap possible)"
 
@@ -327,6 +327,20 @@ def run_layer5(
     top100_raw = sorted_cands[:100]
     top100_originals = [original_lookup.get(c["candidate_id"], {}) for c in top100_raw]
     semantic_scores = compute_semantic_scores(top100_originals, sbert_model, jd_embedding)
+
+    # To understand sbert score distribution for debugging 
+
+    scores = np.array(list(semantic_scores.values()))
+
+    print("\n===== SBERT SCORE DISTRIBUTION =====")
+    print(f"Min    : {scores.min():.4f}")
+    print(f"25%    : {np.percentile(scores, 25):.4f}")
+    print(f"Median : {np.percentile(scores, 50):.4f}")
+    print(f"75%    : {np.percentile(scores, 75):.4f}")
+    print(f"90%    : {np.percentile(scores, 90):.4f}")
+    print(f"95%    : {np.percentile(scores, 95):.4f}")
+    print(f"Max    : {scores.max():.4f}")
+
 
     print("  Building top-100 with SBERT-assisted reasoning...")
     top100 = build_top100(sorted_cands, original_lookup, semantic_scores)
