@@ -26,6 +26,7 @@ Tie-breaking rule (spec §3):
 """
 
 from src.utils.constants import MUST_HAVE_SKILLS
+from src.utils.sbert_similarity import load_model, get_jd_embedding, compute_semantic_scores
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -295,7 +296,6 @@ def build_top100(
 def run_layer5(
     scored_candidates: list[dict],
     original_lookup: dict,
-    semantic_scores: dict,
 ) -> list[dict]:
     """
     Full Layer 5 pipeline.
@@ -320,6 +320,13 @@ def run_layer5(
 
     print(f"  Sorting {len(scored_candidates):,} candidates by Layer 4 score...")
     sorted_cands = sort_by_score(scored_candidates)
+
+    print("  Loading SBERT and computing semantic scores for top 100 only...")
+    sbert_model = load_model()
+    jd_embedding = get_jd_embedding(sbert_model)
+    top100_raw = sorted_cands[:100]
+    top100_originals = [original_lookup.get(c["candidate_id"], {}) for c in top100_raw]
+    semantic_scores = compute_semantic_scores(top100_originals, sbert_model, jd_embedding)
 
     print("  Building top-100 with SBERT-assisted reasoning...")
     top100 = build_top100(sorted_cands, original_lookup, semantic_scores)

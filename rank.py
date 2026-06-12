@@ -24,11 +24,6 @@ from src.layers.layer2_soft_filters           import apply_layer2
 from src.layers.layer3_location_availability  import apply_layer3
 from src.layers.layer4_redrobe_signal_scoring import apply_layer4
 from src.layers.layer5_reranker_and_reasoning import run_layer5
-from src.utils.sbert_similarity               import (
-    load_model as load_sbert,
-    get_jd_embedding,
-    compute_semantic_scores,
-)
 
 
 def load_candidates(path: str) -> list[dict]:
@@ -83,17 +78,6 @@ def run_pipeline(candidates_path: str, out_path: str):
 
     print(f"  Passed: {len(l2_passed):,}")
 
-    # ── SBERT: Semantic similarity — loaded once, scored after Layer 2 ──
-    # NOTE: SBERT scores are passed into Layer 5 for REASONING ONLY.
-    #       They do NOT affect Layer 4 final_score.
-    print("\nLoading SBERT model...")
-    sbert_model  = load_sbert()
-    jd_embedding = get_jd_embedding(sbert_model)
-
-    print("Computing semantic similarity scores (reasoning use only)...")
-    semantic_scores = compute_semantic_scores(l2_passed, sbert_model, jd_embedding)
-    print(f"  Scored {len(semantic_scores):,} candidates semantically")
-
     # ── Layer 3: Location + availability scoring ──────────────────────
     print("\nLayer 3 — Location + availability scoring...")
     l3_results = []
@@ -130,7 +114,6 @@ def run_pipeline(candidates_path: str, out_path: str):
     top100 = run_layer5(
         scored_candidates=scored,
         original_lookup=original_lookup,
-        semantic_scores=semantic_scores,   # NEW: passed for reasoning only
     )
 
     # ── Write CSV ─────────────────────────────────────────────────────
