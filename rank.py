@@ -4,18 +4,16 @@ Usage: python rank.py --candidates ./data/candidates.jsonl.gz --out ./submission
 Runs end-to-end in <5 min, CPU only, no network.
 
 CHANGES FROM PREVIOUS VERSION:
-    - Layer 4 now receives layer2_score (from apply_layer2) as its JD-fit input,
-      NOT the SBERT semantic score. SBERT is a separate component.
-    - semantic_scores dict is now passed into run_layer5() for reasoning only.
-    - Removed retrain=True from run_layer5() call (LightGBM removed from Layer 5).
-    - Layer 2 now returns (eliminated, reason, layer2_score) — score captured here.
+    - SBERT fully removed — no model loading, no semantic scoring
+    - Layer 4 receives layer2_score from apply_layer2 (JD-fit weighted score)
+    - run_layer5 signature simplified: no semantic_scores argument
+    - Layer 2 score captured per-candidate in l2_scores dict, passed into Layer 4
 """
 
 import argparse
 import csv
 import gzip
 import json
-import sys
 from tqdm import tqdm
 
 from src.layers.layer1_honeypot               import apply_honeypot_check
@@ -39,7 +37,7 @@ def run_pipeline(candidates_path: str, out_path: str):
     candidates = load_candidates(candidates_path)
     print(f"Loaded {len(candidates):,} candidates")
 
-    # Keep a lookup of raw candidate data — needed by Layer 5 for reasoning
+    # Raw candidate data — needed by Layer 5 for reasoning text
     original_lookup = {c["candidate_id"]: c for c in candidates}
 
     # ── Layer 1: Honeypot + Hard filters ─────────────────────────────
@@ -63,12 +61,11 @@ def run_pipeline(candidates_path: str, out_path: str):
     print(f"  Passed    : {len(l1_passed):,}")
 
     # ── Layer 2: Soft filters + JD-fit scoring ────────────────────────
-    # IMPORTANT: apply_layer2 returns (eliminated, reason, layer2_score)
-    # layer2_score is the weighted JD-fit signal — this feeds into Layer 4.
-    # It is NOT the SBERT score. SBERT is computed separately below.
+    # apply_layer2 returns (eliminated, reason, layer2_score)
+    # layer2_score is the weighted JD-fit signal fed into Layer 4
     print("\nLayer 2 — Soft filters + JD-fit scoring...")
-    l2_passed  = []
-    l2_scores  = {}  # {candidate_id: layer2_score} — passed into Layer 4
+    l2_passed = []
+    l2_scores = {}  # {candidate_id: layer2_score}
 
     for c in tqdm(l1_passed):
         eliminated, _, layer2_score = apply_layer2(c)
@@ -87,29 +84,21 @@ def run_pipeline(candidates_path: str, out_path: str):
     print(f"  Scored: {len(l3_results):,}")
 
     # ── Layer 4: Redrob signal scoring + final_score ──────────────────
-    # Inputs:
-    #   layer2_score    — JD-fit score from Layer 2 (NOT SBERT)
-    #   location_score  — from Layer 3
-    #   availability_score — from Layer 3
-    # Output:
-    #   final_score = 0.65*layer2_score + 0.10*location + 0.10*availability + 0.15*redrob
+    # final_score = 0.65*layer2_score + 0.10*location + 0.10*availability + 0.15*redrob
     print("\nLayer 4 — Redrob signal scoring...")
     scored = []
     for c, l3 in tqdm(l3_results):
-        cid = c["candidate_id"]
-        l2_score = l2_scores.get(cid, 0.0)   # JD-fit score from Layer 2
         l4 = apply_layer4(
             c,
             location_score=l3["location_score"],
             availability_score=l3["availability_score"],
-            layer2_score=l2_score,            # Layer 2 JD-fit, not SBERT
+            layer2_score=l2_scores.get(c["candidate_id"], 0.0),
         )
         scored.append(l4)
     print(f"  Scored: {len(scored):,}")
 
     # ── Layer 5: Sort + top-100 + reasoning ──────────────────────────
-    # semantic_scores passed in for reasoning text generation only.
-    # Layer 4 final_score is preserved exactly in the CSV score column.
+    # Layer 4 final_score preserved exactly in CSV score column
     print("\nLayer 5 — Top-100 selection + reasoning...")
     top100 = run_layer5(
         scored_candidates=scored,
@@ -127,8 +116,8 @@ def run_pipeline(candidates_path: str, out_path: str):
         writer.writerows(top100)
 
     print(f"\nDone.")
-    print(f"  Top candidate : {top100[0]['candidate_id']} (score={top100[0]['score']})")
-    print(f"  Bottom (rank 100): {top100[99]['candidate_id']} (score={top100[99]['score']})")
+    print(f"  Top candidate  : {top100[0]['candidate_id']} (score={top100[0]['score']})")
+    print(f"  Rank-100       : {top100[99]['candidate_id']} (score={top100[99]['score']})")
     print("  Run validate_submission.py to verify format before submitting.")
 
 

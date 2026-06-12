@@ -83,7 +83,7 @@ def get_availability_score(candidate: dict) -> float:
     open_score = 1.0 if open_to_work else 0.4
     # 0.4 not 0 — passive candidates are still hirable
 
-     # 2. Recency — last active date (weight: 0.30)
+     # 2. Recency — last active date (weight: 0.35)
     months_inactive = _months_since(signals.get("last_active_date", ""))
     if months_inactive <= 1:
         recency_score = 1.0
@@ -97,7 +97,7 @@ def get_availability_score(candidate: dict) -> float:
         recency_score = 0.05  # over a year inactive — basically unreachable
 
     
-    # 3. Notice period (weight: 0.20)
+    # 3. Notice period (weight: 0.15)
     notice_days = signals.get("notice_period_days", 90)
     if notice_days <= 30:
         notice_score = 1.0   # JD: "love sub-30, can buy out up to 30"
@@ -115,8 +115,8 @@ def get_availability_score(candidate: dict) -> float:
  
     availability_score = (
         0.35 * open_score +
-        0.30 * recency_score +
-        0.20 * notice_score +
+        0.35 * recency_score +
+        0.15 * notice_score +
         0.15 * response_score
     )
  
