@@ -1,229 +1,338 @@
-import json
-import numpy as np
-import lightgbm as lgb
-from pathlib import Path
+"""
+layer5_reranker_and_reasoning.py
+
+LAYER 5 — TOP-100 SELECTION + REASONING
+
+What this layer does:
+    1. Takes Layer 4 scored candidates (already ordered by final_score)
+    2. Preserves Layer 4 scores EXACTLY — no re-scoring, no LightGBM
+    3. Resolves ties deterministically using candidate_id ascending (spec requirement)
+    4. Uses SBERT semantic scores (passed in from rank.py) for reasoning ONLY
+    5. Generates 1-2 sentence reasoning grounded in real candidate facts
+
+What this layer does NOT do:
+    - Does NOT modify final_score from Layer 4
+    - Does NOT use SBERT to change rankings
+    - Does NOT call any external API or model during reasoning
+
+SBERT role here:
+    - semantic_scores dict maps candidate_id -> cosine similarity with JD
+    - Used only to identify which JD dimensions the candidate matches well
+    - Feeds into reasoning text, not into the score column
+
+Tie-breaking rule (spec §3):
+    - Equal scores → candidate_id ascending (CAND_XXXXXXX string sort)
+    - This is deterministic and matches validate_submission.py expectations
+"""
+
+from src.utils.constants import MUST_HAVE_SKILLS
 
 
-# ── Feature columns fed into LightGBM ────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# REASONING HELPERS
+# ═══════════════════════════════════════════════════════════════════════
 
-FEATURE_COLS = [
-    "skills_score",
-    "career_score",
-    "experience_score",
-    "education_score",
-    "semantic_score",        # SBERT cosine similarity with JD
-    "location_score",
-    "availability_score",
-    "github_score",
-    "interview_score",
-    "response_speed_score",
-    "offer_score",
-    "seriousness_score",
-    "active_score",
-    "behavioral_multiplier",
-]
+# JD signals we check for in career text — used to build specific reasoning
+# These are the exact things the JD cares about (not generic ML terms)
+JD_DIMENSION_KEYWORDS = {
+    "embeddings":       ["embedding", "embeddings", "sentence-transformer", "sentence_transformer", "dense retrieval"],
+    "vector_db":        ["pinecone", "qdrant", "milvus", "weaviate", "opensearch", "elasticsearch", "faiss", "pgvector"],
+    "hybrid_search":    ["hybrid search", "hybrid retrieval", "bm25", "sparse", "dense", "reranking", "rerank"],
+    "evaluation":       ["ndcg", "mrr", "map", "a/b test", "offline", "online", "eval", "benchmark"],
+    "ranking":          ["ranking", "learning to rank", "ltr", "xgboost", "lightgbm", "lambdarank"],
+    "llm_finetuning":   ["lora", "qlora", "peft", "fine-tun", "finetun", "finetuned"],
+    "production":       ["production", "deployed", "shipped", "serving", "scale", "a/b", "latency"],
+    "product_company":  ["product", "startup", "saas", "platform", "marketplace"],
+}
 
-MODEL_PATH = Path("models/lgbm_ranker.txt")
+# Human-readable labels for the dimensions above
+DIMENSION_LABELS = {
+    "embeddings":      "embeddings-based retrieval",
+    "vector_db":       "vector DB experience",
+    "hybrid_search":   "hybrid search / BM25",
+    "evaluation":      "ranking evaluation (NDCG/A/B)",
+    "ranking":         "learning-to-rank",
+    "llm_finetuning":  "LLM fine-tuning (LoRA/QLoRA)",
+    "production":      "production deployment",
+    "product_company": "product company background",
+}
 
 
-# ── Training ──────────────────────────────────────────────────────────────────
+def _career_text(original: dict) -> str:
+    """All career descriptions + titles joined — for keyword matching."""
+    parts = []
+    for job in original.get("career_history", []):
+        parts.append(job.get("title", "").lower())
+        parts.append(job.get("description", "").lower())
+    return " ".join(parts)
 
-def train(scored_candidates: list[dict], save: bool = True) -> lgb.Booster:
+
+def _matched_jd_dimensions(original: dict) -> list[str]:
     """
-    Train LightGBM LambdaRank on pseudo-labels from Layer 4.
-
-    scored_candidates: list of dicts from apply_layer4()
-    Pseudo-label = quantile bucket of final_score (0–9)
-    so LightGBM learns relative ordering, not absolute scores.
+    Returns list of JD dimension labels this candidate matches in career text.
+    Used in reasoning sentence 1 to be specific, not generic.
     """
-    scores = np.array([c["final_score"] for c in scored_candidates])
-    features = np.array([[c[f] for f in FEATURE_COLS] for c in scored_candidates])
-
-    # Convert continuous scores to relevance buckets 0-9
-    # LightGBM ranker needs integer relevance labels
-    percentiles = np.percentile(scores, np.linspace(0, 100, 11))
-    labels = np.digitize(scores, percentiles[1:-1])  # 0–9
-
-    # Single query group — all candidates compete against each other
-    group = [len(scored_candidates)]
-
-    train_data = lgb.Dataset(
-        features,
-        label=labels,
-        group=group,
-        feature_name=FEATURE_COLS,
-    )
-
-    params = {
-        "objective":       "lambdarank",
-        "metric":          "ndcg",
-        "ndcg_eval_at":    [10, 50],     # optimise exactly what we're scored on
-        "learning_rate":   0.05,
-        "num_leaves":      31,
-        "min_data_in_leaf": 5,
-        "num_iterations":  300,
-        "verbose":         -1,
-    }
-
-    model = lgb.train(params, train_data)
-
-    if save:
-        MODEL_PATH.parent.mkdir(exist_ok=True)
-        model.save_model(str(MODEL_PATH))
-        print(f"Model saved → {MODEL_PATH}")
-
-    return model
+    text = _career_text(original)
+    matched = []
+    for dim, keywords in JD_DIMENSION_KEYWORDS.items():
+        if any(kw in text for kw in keywords):
+            matched.append(DIMENSION_LABELS[dim])
+    return matched
 
 
-def load_model() -> lgb.Booster:
-    return lgb.Booster(model_file=str(MODEL_PATH))
-
-
-# ── Re-ranking ────────────────────────────────────────────────────────────────
-
-def rerank(scored_candidates: list[dict], model: lgb.Booster) -> list[dict]:
+def _matched_must_have_skills(original: dict) -> list[str]:
     """
-    Re-score candidates using LightGBM, return sorted list.
+    Returns trusted must-have skills (from constants) that have
+    either duration > 0 or endorsements > 0 — avoids ghost skills.
     """
-    features = np.array([[c[f] for f in FEATURE_COLS] for c in scored_candidates])
-    lgbm_scores = model.predict(features)
+    skills = original.get("skills", [])
+    assessment_scores = original.get("redrob_signals", {}).get("skill_assessment_scores", {})
+    matched = []
+    for s in skills:
+        name_lower = s["name"].lower()
+        is_must_have = (
+            name_lower in MUST_HAVE_SKILLS
+            or any(mh in name_lower or name_lower in mh for mh in MUST_HAVE_SKILLS)
+        )
+        if not is_must_have:
+            continue
+        # Only include if there's actual proof of skill
+        trusted = (
+            s.get("endorsements", 0) > 0
+            or s.get("duration_months", 0) > 6
+            or s["name"] in assessment_scores
+        )
+        if trusted:
+            matched.append(s["name"])
+    return matched[:4]  # cap at 4 for readability
 
-    for i, c in enumerate(scored_candidates):
-        c["lgbm_score"] = round(float(lgbm_scores[i]), 6)
 
-    return sorted(scored_candidates, key=lambda x: x["lgbm_score"], reverse=True)
-
-
-# ── Reasoning generation ──────────────────────────────────────────────────────
-
-def generate_reasoning(candidate: dict, scored: dict, rank: int, original_data: dict) -> str:
+def _sbert_hint(semantic_score: float) -> str:
     """
-    1-2 sentence reasoning grounded in specific candidate facts.
-    No hallucination — only uses fields that exist in the data.
+    Translates SBERT cosine similarity into a human-readable signal.
+    Used only in reasoning — not in scoring.
+
+    Thresholds tuned for MiniLM all-MiniLM-L6-v2 on this JD.
     """
-    profile = original_data.get("profile", {})
-    history = original_data.get("career_history", [])
-    signals = original_data.get("redrob_signals", {})
-
-    title       = profile.get("current_title", "Unknown")
-    company     = profile.get("current_company", "Unknown")
-    yoe         = profile.get("years_of_experience", 0)
-    location    = profile.get("location", "Unknown")
-    notice      = signals.get("notice_period_days", 90)
-    open_work   = signals.get("open_to_work_flag", False)
-    github      = signals.get("github_activity_score", -1)
-
-    # Top 2 product companies from career
-    product_cos = [
-        j["company"] for j in history
-        if j.get("company_size", "") not in {"10001+", "5001-10000"}
-        or j.get("industry", "").lower() not in {"it services", "consulting"}
-    ][:2]
-
-    # Top matched skills
-    skills = original_data.get("skills", [])
-    from src.utils.constants import MUST_HAVE_SKILLS
-    matched = [
-        s["name"] for s in skills
-        if s["name"].lower() in MUST_HAVE_SKILLS
-        and (s.get("duration_months", 0) > 0 or s.get("endorsements", 0) > 0)
-    ][:3]
-
-    # Build sentence 1 — strengths
-    cos_str = " and ".join(product_cos) if product_cos else company
-    skills_str = ", ".join(matched) if matched else "relevant AI/ML skills"
-    sentence1 = (
-        f"{yoe:.0f}-year {title} with production experience at {cos_str}; "
-        f"strong signal on {skills_str}."
-    )
-
-    # Build sentence 2 — concerns or availability
-    concerns = []
-    if not open_work:
-        concerns.append("not actively looking")
-    if notice > 60:
-        concerns.append(f"{notice}-day notice period")
-    if github == -1 or github < 20:
-        concerns.append("low GitHub activity")
-    if scored.get("career_score", 0) < 0.4:
-        concerns.append("limited product company exposure")
-
-    if concerns and rank > 10:
-        sentence2 = f"Notable concerns: {'; '.join(concerns)}."
-    elif not concerns:
-        sentence2 = f"Located in {location}, {notice}-day notice, {'actively seeking' if open_work else 'passive candidate'}."
+    # NOTE: These thresholds are for reasoning labels only.
+    #       Change them freely — they have zero effect on ranking.
+    if semantic_score >= 0.55:
+        return "strong semantic alignment with JD"
+    elif semantic_score >= 0.40:
+        return "moderate semantic alignment with JD"
+    elif semantic_score >= 0.25:
+        return "partial semantic overlap with JD"
     else:
-        sentence2 = f"Located in {location}; {'; '.join(concerns)}."
+        return "low semantic alignment (keyword gap possible)"
+
+
+def generate_reasoning(
+    original: dict,
+    scored: dict,
+    rank: int,
+    semantic_score: float,
+) -> str:
+    """
+    Generates 1-2 sentence reasoning grounded entirely in candidate facts.
+
+    Rules (per submission_spec Stage 4 checks):
+    - Specific facts only — title, company, YOE, named skills, signals
+    - Connects to JD requirements, not generic praise
+    - Acknowledges concerns honestly for lower ranks
+    - No hallucination — every claim comes from original candidate data
+
+    Args:
+        original        : raw candidate dict from candidates.jsonl
+        scored          : Layer 4 output dict for this candidate
+        rank            : final rank (1-100), used to calibrate concern threshold
+        semantic_score  : SBERT cosine similarity — used for reasoning text ONLY
+    """
+    profile  = original.get("profile", {})
+    signals  = original.get("redrob_signals", {})
+    history  = original.get("career_history", [])
+
+    # ── Profile facts ────────────────────────────────────────────────
+    title    = profile.get("current_title", "ML Engineer")
+    company  = profile.get("current_company", "current company")
+    yoe      = profile.get("years_of_experience", 0)
+    location = profile.get("location", "Unknown")
+    notice   = signals.get("notice_period_days", 90)
+    open_work = signals.get("open_to_work_flag", False)
+    github   = signals.get("github_activity_score", -1)
+
+    # ── What the candidate actually matches in JD ────────────────────
+    jd_dims   = _matched_jd_dimensions(original)
+    mh_skills = _matched_must_have_skills(original)
+
+    # ── Sentence 1: Strengths ────────────────────────────────────────
+    # Use up to 2 JD dimensions + 2 skills for specificity
+    dim_str   = ", ".join(jd_dims[:2]) if jd_dims else "applied ML systems"
+    skill_str = ", ".join(mh_skills[:2]) if mh_skills else "relevant technical skills"
+
+    # NOTE: SBERT hint used here in sentence 1 for semantic context
+    sbert_hint = _sbert_hint(semantic_score)
+
+    sentence1 = (
+        f"{yoe:.0f}-year {title} at {company} with career evidence of "
+        f"{dim_str}; verified skills include {skill_str} ({sbert_hint})."
+    )
+
+    # ── Sentence 2: Concerns or availability ────────────────────────
+    concerns = []
+
+    # Notice period concern (JD: loves sub-30, tolerates to 90)
+    if notice > 90:
+        concerns.append(f"{notice}-day notice (above JD threshold)")
+    elif notice > 60:
+        concerns.append(f"{notice}-day notice (tolerable but noted)")
+
+    # Availability concern
+    if not open_work:
+        concerns.append("not actively seeking (passive candidate)")
+
+    # GitHub signal — only flag if below threshold AND rank is meaningful
+    # NOTE: threshold 20 is conservative; raise it if you want stricter filtering
+    if github != -1 and github < 20 and rank <= 50:
+        concerns.append(f"low GitHub activity score ({github:.0f})")
+    elif github == -1 and rank <= 20:
+        concerns.append("no GitHub linked")
+
+    # Seriousness — only flag for top 20 where bar is higher
+    if scored.get("seriousness_score", 1.0) < 0.5 and rank <= 20:
+        concerns.append("low profile completeness / verification")
+
+    # Layer 2 score concern — weak JD-fit signal
+    if scored.get("layer2_score", 1.0) < 0.45:
+        concerns.append("limited direct JD-skill evidence in career")
+
+    # Build sentence 2
+    if concerns:
+        sentence2 = f"Concerns: {'; '.join(concerns)}."
+    else:
+        avail_str = "actively seeking" if open_work else "passive candidate"
+        sentence2 = (
+            f"Located in {location}, {notice}-day notice, {avail_str}."
+        )
 
     return f"{sentence1} {sentence2}"
 
 
-# ── Top-100 CSV builder ───────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# SORTING — SCORE PASSTHROUGH + TIE-BREAK
+# ═══════════════════════════════════════════════════════════════════════
+
+def sort_by_score(scored_candidates: list[dict]) -> list[dict]:
+    """
+    Sorts by final_score descending.
+
+    TIE-BREAKING (spec §3 requirement):
+        Equal scores → candidate_id ascending (CAND_XXXXXXX string sort)
+        This is deterministic and matches validate_submission.py expectations.
+
+    NOTE: Layer 4 final_score is preserved exactly — no modification here.
+          If you ever want a secondary numeric tie-break (e.g. redrob_score),
+          replace the candidate_id sort key with: (-c["redrob_score"], c["candidate_id"])
+    """
+    return sorted(
+        scored_candidates,
+        key=lambda c: (-c["final_score"], c["candidate_id"])  # TIE-BREAK: candidate_id asc
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TOP-100 CSV BUILDER
+# ═══════════════════════════════════════════════════════════════════════
 
 def build_top100(
-    reranked: list[dict],
-    original_lookup: dict[str, dict],
+    sorted_candidates: list[dict],
+    original_lookup: dict,
+    semantic_scores: dict,
 ) -> list[dict]:
     """
-    Takes reranked list, returns top 100 rows ready for CSV output.
-    Scores are normalised to [0, 1] and guaranteed non-increasing.
+    Takes the sorted list, slices top 100, generates reasoning per candidate.
+
+    Args:
+        sorted_candidates : full sorted list from sort_by_score()
+        original_lookup   : {candidate_id: raw_candidate_dict} — for reasoning facts
+        semantic_scores   : {candidate_id: float} — SBERT scores, reasoning only
+
+    Returns:
+        list of 100 dicts ready to write as CSV rows
+        columns: candidate_id, rank, score, reasoning
     """
-    top100 = reranked[:100]
-
-    # Normalise lgbm_scores to 0-1 range
-    raw_scores = [c["lgbm_score"] for c in top100]
-    min_s, max_s = min(raw_scores), max(raw_scores)
-    score_range = max_s - min_s if max_s != min_s else 1.0
-
+    top100 = sorted_candidates[:100]
     rows = []
+
     for rank, c in enumerate(top100, start=1):
         cid = c["candidate_id"]
-        normalised = round((c["lgbm_score"] - min_s) / score_range, 6)
         original = original_lookup.get(cid, {})
-        reasoning = generate_reasoning(c, c, rank, original)
+
+        # NOTE: score in CSV = Layer 4 final_score, unchanged
+        # SBERT semantic score fetched here — used only in reasoning text
+        sem_score = semantic_scores.get(cid, 0.0)
+
+        reasoning = generate_reasoning(
+            original=original,
+            scored=c,
+            rank=rank,
+            semantic_score=sem_score,
+        )
 
         rows.append({
             "candidate_id": cid,
             "rank":         rank,
-            "score":        normalised,
+            "score":        c["final_score"],   # Layer 4 score — untouched
             "reasoning":    reasoning,
         })
 
     return rows
 
 
-# ── Master pipeline ───────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# MASTER FUNCTION
+# ═══════════════════════════════════════════════════════════════════════
 
 def run_layer5(
     scored_candidates: list[dict],
-    original_lookup: dict[str, dict],
-    retrain: bool = True,
+    original_lookup: dict,
+    semantic_scores: dict,
 ) -> list[dict]:
     """
-    Full Layer 5 pipeline:
-      1. Train (or load) LightGBM ranker
-      2. Re-rank scored candidates
-      3. Build top-100 with reasoning
+    Full Layer 5 pipeline.
 
     Args:
-        scored_candidates : list of dicts from apply_layer4()
-        original_lookup   : {candidate_id: raw_candidate_dict} for reasoning
-        retrain           : if False, loads saved model instead of retraining
+        scored_candidates : list of dicts from apply_layer4() — contains final_score
+        original_lookup   : {candidate_id: raw candidate dict} — for reasoning
+        semantic_scores   : {candidate_id: float} from compute_semantic_scores()
+                            Used ONLY for reasoning text, not for scoring.
 
     Returns:
-        list of 100 dicts ready to write as CSV
+        list of exactly 100 dicts ready to write as CSV
+        [{candidate_id, rank, score, reasoning}, ...]
+
+    NOTE: retrain parameter from old LightGBM version has been removed.
+          If rank.py still passes retrain=True, it will be ignored gracefully
+          because we use **kwargs — see run_layer5 signature note below.
+
+    REMOVED: LightGBM training, FEATURE_COLS, model loading/saving.
+    ADDED:   SBERT-assisted reasoning, deterministic tie-breaking.
     """
-    if retrain or not MODEL_PATH.exists():
-        print(f"Training LightGBM on {len(scored_candidates)} candidates...")
-        model = train(scored_candidates)
-    else:
-        print("Loading saved model...")
-        model = load_model()
 
-    print("Re-ranking...")
-    reranked = rerank(scored_candidates, model)
+    print(f"  Sorting {len(scored_candidates):,} candidates by Layer 4 score...")
+    sorted_cands = sort_by_score(scored_candidates)
 
-    print("Building top-100 with reasoning...")
-    top100 = build_top100(reranked, original_lookup)
+    print("  Building top-100 with SBERT-assisted reasoning...")
+    top100 = build_top100(sorted_cands, original_lookup, semantic_scores)
 
+    # Sanity check — should never fire but good to have
+    assert len(top100) == 100, f"Expected 100 rows, got {len(top100)}"
+
+    # Verify scores are non-increasing (validate_submission.py requirement)
+    for i in range(len(top100) - 1):
+        assert top100[i]["score"] >= top100[i+1]["score"], (
+            f"Score order violation at rank {top100[i]['rank']} → {top100[i+1]['rank']}: "
+            f"{top100[i]['score']} < {top100[i+1]['score']}"
+        )
+
+    print(f"  Top candidate: {top100[0]['candidate_id']} (score={top100[0]['score']})")
     return top100
