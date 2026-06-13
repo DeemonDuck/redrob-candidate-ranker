@@ -1,9 +1,6 @@
 # Core
 pandas
 tqdm
-
-# Layer 4 - Scoring
-scikit-learn
 numpy
 
 # Validation
