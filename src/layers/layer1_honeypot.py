@@ -85,7 +85,7 @@ def check_experience_vs_history_mismatch(candidate: dict) -> tuple[bool, str]:
             f"career history only accounts for {history_years:.1f} years"
         )
 
-    # NEW — history far more than claimed (honeypot pattern Finding #6)
+    # History far more than claimed (honeypot pattern Finding #6)
     if history_years > stated_years + 2:
         return (
             True,
@@ -96,7 +96,7 @@ def check_experience_vs_history_mismatch(candidate: dict) -> tuple[bool, str]:
     return False, ""
 
 
-# ── Check 4 (NEW): Duplicate job descriptions across companies ────────────────
+# ── Check 4 Duplicate job descriptions across companies ────────────────
 
 def check_duplicate_job_descriptions(candidate: dict) -> tuple[bool, str]:
     """

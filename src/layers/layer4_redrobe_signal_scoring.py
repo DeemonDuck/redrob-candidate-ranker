@@ -15,11 +15,6 @@ Outputs:
     - redrob_score
     - final_score
 
-No JD-fit scoring here.
-No skills scoring.
-No career scoring.
-
-Those already exist in Layer 2.
 """
 
 from datetime import date, datetime

@@ -6,26 +6,13 @@ Returns a penalty_score in [0.0, 1.0] where:
   1.0 = no issues found
   0.0 = severe issues across all dimensions
 
-Old Rules 4, 5, 6 from Layer 1 now live here as weighted penalties instead
-of hard eliminations — good candidates with partial signals survive.
-
 Only hard elimination remaining: implicit services-only pattern (100% services
 career with zero product signal — still a definitive no).
 
-FIX (determinism):
-    MUST_HAVE_SKILLS and LLM_WRAPPER_ONLY_SKILLS are Python sets.
-    Sets have randomized iteration order across process restarts due to
-    Python's hash randomization. Any `any(... for x in SET)` loop that
-    does substring matching produces different results each run.
-    Fix: sort the sets into lists once at module load — iteration order
-    is then alphabetical and identical every single run.
 """
 
 from src.utils.constants import MUST_HAVE_SKILLS, PURE_SERVICES_COMPANIES, LLM_WRAPPER_ONLY_SKILLS
 
-# FIX: sort once at module load — used everywhere we need to iterate and substring-match.
-# Set intersections (skills & MUST_HAVE_SKILLS) are still fine and unchanged.
-# Only the `any(mh in name or name in mh for mh in ...)` loops needed this fix.
 MUST_HAVE_SORTED   = sorted(MUST_HAVE_SKILLS)
 LLM_WRAPPER_SORTED = sorted(LLM_WRAPPER_ONLY_SKILLS)
 
@@ -131,7 +118,7 @@ def score_trusted_must_haves(candidate: dict) -> float:
 
 def score_must_have_in_career(candidate: dict) -> float:
     """
-    Ex-Rule 4: zero must-have skills in skills list OR career text.
+    Zero must-have skills in skills list OR career text.
     Now graduated — partial career evidence gets partial credit.
     """
     skills      = {_normalise(s["name"]) for s in candidate.get("skills", [])}
@@ -156,7 +143,7 @@ def score_must_have_in_career(candidate: dict) -> float:
 
 def score_production_evidence(candidate: dict) -> float:
     """
-    Ex-Rule 5: pure research with no production signals.
+    Pure research with no production signals.
     Now: graduated score based on production signal density in career.
 
     production_signals is a local set used only for membership checks
@@ -182,7 +169,7 @@ def score_production_evidence(candidate: dict) -> float:
 
 def score_pre_llm_background(candidate: dict) -> float:
     """
-    Ex-Rule 6: LLM wrapper only with no pre-LLM background.
+    LLM wrapper only with no pre-LLM background.
     Now: graduated — LangChain + no history = 0.2, LangChain + some history = 0.7+
 
     has_llm_wrapper uses set intersection (&) which is deterministic — no fix needed.

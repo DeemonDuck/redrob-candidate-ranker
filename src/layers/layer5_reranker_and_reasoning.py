@@ -12,15 +12,13 @@ What this layer does:
 
 What this layer does NOT do:
     - Does NOT modify final_score from Layer 4
-    - Does NOT use SBERT (removed — was only producing a label string)
     - Does NOT call any external model or API
 
 Tie-breaking rule (spec §3):
     Equal scores → candidate_id ascending (CAND_XXXXXXX string sort)
     Deterministic and matches validate_submission.py expectations.
 
-REMOVED: LightGBM, SBERT, semantic_scores parameter, _sbert_hint()
-ADDED:   Pure fact-based reasoning from career + redrob signals
+Pure fact-based reasoning from career + redrob signals
 """
 
 from src.utils.constants import MUST_HAVE_SKILLS
