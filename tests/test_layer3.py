@@ -1,5 +1,6 @@
 # test_layer3.py
 
+import gzip
 import json
 import sys
 from statistics import mean
@@ -14,7 +15,7 @@ from src.layers.layer3_location_availability import apply_layer3
 
 layer3_candidates = []
 
-with open("data/candidates.jsonl", "r", encoding="utf-8") as f:
+with gzip.open("data/candidates.jsonl.gz", "rt", encoding="utf-8") as f:
     for line in tqdm(f, total=100000):
         candidate = json.loads(line)
 

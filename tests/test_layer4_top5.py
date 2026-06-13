@@ -1,4 +1,5 @@
 import os
+import gzip
 import json
 
 from src.layers.layer1_honeypot import apply_honeypot_check
@@ -16,7 +17,7 @@ layer1_rejects = 0
 layer2_rejects = 0
 
 
-with open("data/candidates.jsonl", "r", encoding="utf-8") as f:
+with gzip.open("data/candidates.jsonl.gz", "rt", encoding="utf-8") as f:
 
     for line in f:
 

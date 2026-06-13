@@ -1,5 +1,6 @@
 # test_honeypot_v2.py
 
+import gzip
 import json
 from collections import Counter
 from tqdm import tqdm
@@ -7,7 +8,7 @@ from tqdm import tqdm
 from layers.layer1_honeypot import apply_honeypot_check
 
 
-DATA_PATH = "data/candidates.jsonl"   # change if needed
+DATA_PATH = "data/candidates.jsonl.gz"
 
 
 total_candidates = 0
@@ -17,7 +18,7 @@ reason_counter = Counter()
 
 examples = {}
 
-with open(DATA_PATH, "r", encoding="utf-8") as f:
+with gzip.open(DATA_PATH, "rt", encoding="utf-8") as f:
     for line in tqdm(f):
         candidate = json.loads(line)
 

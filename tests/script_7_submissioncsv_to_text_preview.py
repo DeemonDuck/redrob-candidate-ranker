@@ -1,4 +1,5 @@
 import csv
+import gzip
 import json
 import os
 
@@ -7,7 +8,7 @@ import os
 # ------------------------------------------------------------------
 
 SUBMISSION_FILE = "submission.csv"
-CANDIDATES_FILE = "data/candidates.jsonl"
+CANDIDATES_FILE = "data/candidates.jsonl.gz"
 
 OUTPUT_DIR = "outputs/layer5"
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "inspect_candidates.txt")
@@ -44,7 +45,7 @@ with open(SUBMISSION_FILE, newline="", encoding="utf-8") as f:
 # Read candidates.jsonl and dump matching candidates
 # ------------------------------------------------------------------
 
-with open(CANDIDATES_FILE, "r", encoding="utf-8") as fin, \
+with gzip.open(CANDIDATES_FILE, "rt", encoding="utf-8") as fin, \
      open(OUTPUT_FILE, "w", encoding="utf-8") as fout:
 
     for line in fin:

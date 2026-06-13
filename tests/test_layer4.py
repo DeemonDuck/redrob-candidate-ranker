@@ -1,3 +1,4 @@
+import gzip
 import json
 import sys
 from statistics import mean
@@ -13,7 +14,7 @@ from src.layers.layer4_redrobe_signal_scoring import apply_layer4
 
 results = []
 
-with open("data/candidates.jsonl", "r", encoding="utf-8") as f:
+with gzip.open("data/candidates.jsonl.gz", "rt", encoding="utf-8") as f:
     for line in tqdm(f, total=100000):
         candidate = json.loads(line)
 

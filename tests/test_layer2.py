@@ -1,8 +1,9 @@
+import gzip
 import json
 from collections import Counter
 from src.layers.layer2_soft_filters import apply_layer2
 
-INPUT_FILE = "data/candidates.jsonl"
+INPUT_FILE = "data/candidates.jsonl.gz"
 
 scores = []
 eliminated = 0
@@ -11,7 +12,7 @@ reasons = Counter()
 top_candidates = []
 bottom_candidates = []
 
-with open(INPUT_FILE, "r", encoding="utf-8") as f:
+with gzip.open(INPUT_FILE, "rt", encoding="utf-8") as f:
     for line in f:
         candidate = json.loads(line)
 
