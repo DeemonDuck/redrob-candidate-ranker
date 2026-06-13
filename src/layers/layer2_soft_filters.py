@@ -11,10 +11,28 @@ of hard eliminations — good candidates with partial signals survive.
 
 Only hard elimination remaining: implicit services-only pattern (100% services
 career with zero product signal — still a definitive no).
+
+FIX (determinism):
+    MUST_HAVE_SKILLS and LLM_WRAPPER_ONLY_SKILLS are Python sets.
+    Sets have randomized iteration order across process restarts due to
+    Python's hash randomization. Any `any(... for x in SET)` loop that
+    does substring matching produces different results each run.
+    Fix: sort the sets into lists once at module load — iteration order
+    is then alphabetical and identical every single run.
 """
 
 from src.utils.constants import MUST_HAVE_SKILLS, PURE_SERVICES_COMPANIES, LLM_WRAPPER_ONLY_SKILLS
 
+# FIX: sort once at module load — used everywhere we need to iterate and substring-match.
+# Set intersections (skills & MUST_HAVE_SKILLS) are still fine and unchanged.
+# Only the `any(mh in name or name in mh for mh in ...)` loops needed this fix.
+MUST_HAVE_SORTED   = sorted(MUST_HAVE_SKILLS)
+LLM_WRAPPER_SORTED = sorted(LLM_WRAPPER_ONLY_SKILLS)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════════════
 
 def _normalise(text: str) -> str:
     return text.lower().strip()
@@ -31,7 +49,9 @@ def _all_career_text(candidate: dict) -> str:
     return " ".join(_career_text_per_job(candidate))
 
 
-# ── Signal 1: Career-skills alignment score ───────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# SIGNAL 1: Career-skills alignment score
+# ═══════════════════════════════════════════════════════════════════════
 
 def score_career_skills_alignment(candidate: dict) -> float:
     """
@@ -44,13 +64,13 @@ def score_career_skills_alignment(candidate: dict) -> float:
         return 0.5  # no skills listed — neutral
 
     assessment_scores = candidate.get("redrob_signals", {}).get("skill_assessment_scores", {})
-    career_texts = _career_text_per_job(candidate)
-    all_career_text = " ".join(career_texts)
+    career_texts      = _career_text_per_job(candidate)
+    all_career_text   = " ".join(career_texts)
 
     ghost_count = 0
     for skill in skills:
         name = _normalise(skill["name"])
-        in_career = any(name in text for text in career_texts)
+        in_career         = any(name in text for text in career_texts)
         partial_in_career = any(
             word in all_career_text
             for word in name.split()
@@ -63,7 +83,9 @@ def score_career_skills_alignment(candidate: dict) -> float:
     return round(1 - (ghost_count / len(skills)), 4)
 
 
-# ── Signal 2: Trusted must-have skill score ───────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# SIGNAL 2: Trusted must-have skill score
+# ═══════════════════════════════════════════════════════════════════════
 
 def score_trusted_must_haves(candidate: dict) -> float:
     """
@@ -71,19 +93,23 @@ def score_trusted_must_haves(candidate: dict) -> float:
     Was: eliminate if <2. Now: graduated score.
     0 trusted = 0.0, 1 = 0.4, 2 = 0.7, 3+ = 1.0
     """
-    skills = candidate.get("skills", [])
+    skills            = candidate.get("skills", [])
     assessment_scores = candidate.get("redrob_signals", {}).get("skill_assessment_scores", {})
-    career_text = _all_career_text(candidate)
+    career_text       = _all_career_text(candidate)
 
     trusted_count = 0
     for skill in skills:
         name = _normalise(skill["name"])
+
+        # FIX: iterate MUST_HAVE_SORTED (list) not MUST_HAVE_SKILLS (set)
+        # so substring matching order is identical every run
         is_must_have = (
             name in MUST_HAVE_SKILLS
-            or any(mh in name or name in mh for mh in MUST_HAVE_SKILLS)
+            or any(mh in name or name in mh for mh in MUST_HAVE_SORTED)
         )
         if not is_must_have:
             continue
+
         has_proof = (
             skill.get("endorsements", 0) > 0
             or skill.get("duration_months", 0) > 6
@@ -99,19 +125,24 @@ def score_trusted_must_haves(candidate: dict) -> float:
     else:                    return 1.0
 
 
-# ── Signal 3: Must-have skills in career history (ex-Rule 4) ─────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# SIGNAL 3: Must-have skills in career history (ex-Rule 4)
+# ═══════════════════════════════════════════════════════════════════════
 
 def score_must_have_in_career(candidate: dict) -> float:
     """
     Ex-Rule 4: zero must-have skills in skills list OR career text.
     Now graduated — partial career evidence gets partial credit.
     """
-    skills = {_normalise(s["name"]) for s in candidate.get("skills", [])}
+    skills      = {_normalise(s["name"]) for s in candidate.get("skills", [])}
     career_text = _all_career_text(candidate)
 
-    skill_matches = len(skills & MUST_HAVE_SKILLS)
-    career_matches = sum(1 for kw in MUST_HAVE_SKILLS if kw in career_text)
-    total_signal = skill_matches + career_matches
+    # Set intersection is deterministic — no fix needed here
+    skill_matches  = len(skills & MUST_HAVE_SKILLS)
+
+    # FIX: iterate MUST_HAVE_SORTED (list) not MUST_HAVE_SKILLS (set)
+    career_matches = sum(1 for kw in MUST_HAVE_SORTED if kw in career_text)
+    total_signal   = skill_matches + career_matches
 
     if total_signal == 0:   return 0.0
     elif total_signal <= 2: return 0.4
@@ -119,12 +150,17 @@ def score_must_have_in_career(candidate: dict) -> float:
     else:                   return 1.0
 
 
-# ── Signal 4: Production evidence score (ex-Rule 5) ──────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# SIGNAL 4: Production evidence score (ex-Rule 5)
+# ═══════════════════════════════════════════════════════════════════════
 
 def score_production_evidence(candidate: dict) -> float:
     """
     Ex-Rule 5: pure research with no production signals.
     Now: graduated score based on production signal density in career.
+
+    production_signals is a local set used only for membership checks
+    (kw in career_text) — not substring iteration — so no fix needed here.
     """
     career_text = _all_career_text(candidate)
     production_signals = {
@@ -140,17 +176,24 @@ def score_production_evidence(candidate: dict) -> float:
     else:              return 1.0
 
 
-# ── Signal 5: LLM wrapper penalty (ex-Rule 6) ────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# SIGNAL 5: LLM wrapper penalty (ex-Rule 6)
+# ═══════════════════════════════════════════════════════════════════════
 
 def score_pre_llm_background(candidate: dict) -> float:
     """
     Ex-Rule 6: LLM wrapper only with no pre-LLM background.
     Now: graduated — LangChain + no history = 0.2, LangChain + some history = 0.7+
+
+    has_llm_wrapper uses set intersection (&) which is deterministic — no fix needed.
+    pre_llm_signals is a local set used only for (kw in career_text) — also fine.
     """
-    skills = {_normalise(s["name"]) for s in candidate.get("skills", [])}
+    skills      = {_normalise(s["name"]) for s in candidate.get("skills", [])}
     career_text = _all_career_text(candidate)
 
+    # Set intersection — deterministic, no fix needed
     has_llm_wrapper = bool(skills & LLM_WRAPPER_ONLY_SKILLS)
+
     pre_llm_signals = {
         "search", "retrieval", "ranking", "recommendation",
         "embedding", "bm25", "index", "classification",
@@ -169,7 +212,9 @@ def score_pre_llm_background(candidate: dict) -> float:
         return 0.9   # LLM wrapper + solid pre-LLM background = fine
 
 
-# ── Signal 6: Implicit services pattern (hard elimination stays) ──────────────
+# ═══════════════════════════════════════════════════════════════════════
+# SIGNAL 6: Implicit services pattern (hard elimination stays)
+# ═══════════════════════════════════════════════════════════════════════
 
 def check_implicit_services_hard(candidate: dict) -> tuple[bool, str]:
     """
@@ -181,21 +226,21 @@ def check_implicit_services_hard(candidate: dict) -> tuple[bool, str]:
         return False, ""
 
     SERVICES_INDUSTRIES = {"it services", "information technology", "consulting", "outsourcing"}
-    LARGE_SIZES = {"1001-5000", "5001-10000", "10001+"}
-    PRODUCT_SIGNALS = {"product", "saas", "platform", "startup", "fintech",
-                       "edtech", "healthtech", "ecommerce", "marketplace"}
+    LARGE_SIZES         = {"1001-5000", "5001-10000", "10001+"}
+    PRODUCT_SIGNALS     = {"product", "saas", "platform", "startup", "fintech",
+                           "edtech", "healthtech", "ecommerce", "marketplace"}
 
     services_months = 0
-    product_months = 0
-    total_months = 0
+    product_months  = 0
+    total_months    = 0
 
     for job in history:
-        duration = job.get("duration_months", 0)
+        duration     = job.get("duration_months", 0)
         total_months += duration
-        industry = _normalise(job.get("industry", ""))
+        industry     = _normalise(job.get("industry", ""))
         company_size = job.get("company_size", "")
         company_name = _normalise(job.get("company", ""))
-        description = _normalise(job.get("description", ""))
+        description  = _normalise(job.get("description", ""))
 
         if company_name in PURE_SERVICES_COMPANIES:
             services_months += duration
@@ -214,11 +259,13 @@ def check_implicit_services_hard(candidate: dict) -> tuple[bool, str]:
     return False, ""
 
 
-# ── Master function ───────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# MASTER FUNCTION
+# ═══════════════════════════════════════════════════════════════════════
 
 # Weights for each signal — sum to 1.0
 SIGNAL_WEIGHTS = {
-    "alignment":    0.20,   # career-skills alignment
+    "alignment":   0.20,   # career-skills alignment
     "trusted_mh":  0.20,   # trusted must-have skills
     "mh_career":   0.15,   # must-have evidence in career
     "production":  0.30,   # production deployment evidence
@@ -229,8 +276,8 @@ def apply_layer2(candidate: dict) -> tuple[bool, str, float]:
     """
     Returns (is_eliminated, reason, layer2_score).
 
-    is_eliminated: True only for implicit services-only pattern
-    layer2_score:  0.0–1.0, feeds directly into Layer 4 feature vector
+    is_eliminated : True only for implicit services-only pattern
+    layer2_score  : 0.0–1.0, feeds directly into Layer 4 final_score
     """
     # Hard elimination check first
     eliminated, reason = check_implicit_services_hard(candidate)
