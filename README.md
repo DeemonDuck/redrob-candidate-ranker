@@ -1,8 +1,31 @@
-# Redrobe Ranker
+# Redrob Ranker
 
-A rule-based candidate ranking pipeline built for the **Redrob India Runs Data & AI Challenge**. Given a pool of ~100,000 candidates in `.jsonl` / `.jsonl.gz` format, it filters, scores, and outputs the top 100 most relevant candidates for a senior ML/NLP engineering role — with a one-sentence reasoning per candidate.
+> A five-layer candidate ranking pipeline that filters 100,000 profiles down to the top 100 for a Senior ML Engineer role — with a one-sentence reasoning per candidate. Runs in under 5 minutes, CPU only, zero network calls.
 
-Runs end-to-end in **under 5 minutes on CPU only, with no network access required**.
+**[🚀 Live Demo → redrobe-candidate-ranker.streamlit.app](https://redrobe-candidate-ranker.streamlit.app/)**
+
+---
+
+## What this actually does
+
+You give it a `.jsonl.gz` file with 100K candidates. It gives you back a `submission.csv` with the top 100, ranked and explained.
+
+Under the hood, five layers of logic work sequentially — each one passing only the strongest candidates to the next:
+
+```
+100,000 candidates
+      │
+      ▼  Layer 1a — kick out fake profiles (honeypots)
+      ▼  Layer 1b — hard disqualifiers from the JD
+      ▼  Layer 2  — score JD-fit (skills, career, production evidence)
+      ▼  Layer 3  — score location + availability
+      ▼  Layer 4  — score platform behaviour (GitHub, interview rate, saves)
+      │
+      ▼
+   Top 100 with reasoning  →  submission.csv
+```
+
+No LLM. No external API. Pure Python logic on CPU.
 
 ---
 
@@ -72,6 +95,25 @@ Redrobe_Ranker/
 └── data/
     └── candidates.jsonl.gz         # ~100K candidate profiles (not committed)
 ```
+---
+
+## Want to customise the ranking for a different role?
+
+The pipeline is intentionally modular. Here's what to change and where:
+
+| What you want to change | Where to change it |
+|---|---|
+| Target skills (e.g. swap NLP → Computer Vision) | `src/utils/constants.py` → `MUST_HAVE_SKILLS` |
+| Location preferences | `src/layers/layer3_location_availability.py` → `TIER_1_CITIES`, `TIER_2_CITIES` |
+| Experience floor (currently 3 years) | `src/utils/constants.py` → `MIN_YEARS_EXPERIENCE` |
+| Weight of JD-fit vs platform signals | `src/layers/layer4_redrobe_signal_scoring.py` → final `apply_layer4` formula |
+| Which companies count as "pure services" | `src/utils/constants.py` → `PURE_SERVICES_COMPANIES` |
+| How much each Layer 2 signal matters | `src/layers/layer2_soft_filters.py` → `SIGNAL_WEIGHTS` |
+
+Example — to target a Computer Vision role instead:
+1. Replace `MUST_HAVE_SKILLS` with CV-relevant terms (`opencv`, `yolo`, `torchvision` etc.)
+2. Remove `WRONG_DOMAIN_KEYWORDS` check from Layer 1 (currently it eliminates CV profiles)
+3. Update `JD_DIMENSION_KEYWORDS` in Layer 5 for accurate reasoning
 
 ---
 
@@ -282,8 +324,6 @@ python tests/validate_submission.py submission.csv
 ```
 pandas
 tqdm
-lightgbm
-scikit-learn
 numpy
 sentence-transformers
 pyyaml
@@ -294,8 +334,6 @@ Install with:
 ```bash
 pip install -r requirements.txt
 ```
-
-> Note: `lightgbm`, `scikit-learn`, and `sentence-transformers` are listed as dependencies but the current pipeline is fully rule-based. They are retained in `requirements.txt` for potential future scoring extensions.
 
 ---
 
