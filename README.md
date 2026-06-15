@@ -355,3 +355,7 @@ pip install -r requirements.txt
 - **Task:** Rank ~100,000 candidates for a Senior ML Engineer (NLP/Search/Retrieval) role and return the top 100 with reasoning
 - **Constraints:** Must complete in <5 minutes, CPU only, no network calls during ranking
 - **Submission format:** `submission.csv` — 4 columns, 100 rows, UTF-8
+
+
+## License
+MIT — see [LICENSE](LICENSE)
