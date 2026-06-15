@@ -53,6 +53,18 @@ python tests/validate_submission.py submission.csv
 
 ---
 
+## Demo
+
+**Dashboard walkthrough**
+
+![Dashboard Demo](assets/dashboard.gif)
+
+**Terminal run — full 100K pipeline**
+
+![Terminal Demo](assets/terminal.gif)
+
+---
+
 ## Output Format
 
 `submission.csv` — exactly 100 rows, UTF-8 encoded.
