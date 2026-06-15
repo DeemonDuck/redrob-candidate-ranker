@@ -1,8 +1,10 @@
-# Redrob Ranker
+# 🏆 Redrob Ranker
 
 > A five-layer candidate ranking pipeline that filters 100,000 profiles down to the top 100 for a Senior ML Engineer role — with a one-sentence reasoning per candidate. Runs in under 5 minutes, CPU only, zero network calls.
 
 **[🚀 Live Demo → redrobe-candidate-ranker.streamlit.app](https://redrobe-candidate-ranker.streamlit.app/)**
+
+> **Note:** The demo is hosted on the free tier of Streamlit Community Cloud. If it has been idle, it may take 20–60 seconds to wake up on the first visit.
 
 ---
 
@@ -28,6 +30,9 @@ Under the hood, five layers of logic work sequentially — each one passing only
 No LLM. No external API. Pure Python logic on CPU.
 
 ---
+## Prerequisites
+
+Download the candidate dataset from the hackathon portal and place it : data/candidates.jsonl.gz
 
 ## Quickstart
 
@@ -166,7 +171,7 @@ The dataset contains ~80 synthetically generated fake profiles ("honeypots"). Ha
 | **Expert skills, zero usage** | 3 or more skills marked `"expert"` proficiency with `0` months of usage and `0` endorsements |
 | **Experience vs history mismatch** | Claimed `years_of_experience` is 6+ years more than career history totals (fabricated XP), OR career history totals 2+ years more than claimed (synthetic over-generation) |
 
-A fourth check (duplicate job descriptions via Jaccard similarity of word trigrams) is implemented but currently disabled — it was found to be too aggressive on real candidates.
+A fourth check (duplicate job descriptions via Jaccard similarity of word trigrams) is implemented but currently disabled —  it was found that almost 36000 candidates had that so it was considered a part of the synthetic dataset in this case.
 
 ### Layer 1b — Hard Filters (`layer1_hard_filters.py`)
 
@@ -312,10 +317,6 @@ All test scripts are in `tests/` and read from `data/candidates.jsonl` (uncompre
 | `script_8_duplicate_ID_check.py` | Flags any duplicate `candidate_id` values in the CSV |
 | `inspect_computer_vision_survivors.py` | Debug script — finds CV-title candidates that survive Layer 2 and saves their score breakdowns |
 
-Run the validator before submitting:
-```bash
-python tests/validate_submission.py submission.csv
-```
 
 ---
 
@@ -325,7 +326,6 @@ python tests/validate_submission.py submission.csv
 pandas
 tqdm
 numpy
-sentence-transformers
 pyyaml
 streamlit
 ```

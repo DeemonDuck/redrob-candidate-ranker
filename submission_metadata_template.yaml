@@ -1,0 +1,100 @@
+# Redrob Hackathon — Submission Metadata Template
+#
+# Copy this file to your repo root as `submission_metadata.yaml` and fill it in.
+# The fields here should match what you submit via the portal at upload time.
+# Stage 3 review uses this file to verify your portal metadata.
+
+# ============================================================================
+# Team identity
+# ============================================================================
+team_name: "DeemonDuck"  # Used in leaderboard and announcements
+
+primary_contact:
+  name: "Ridham Taneja"
+  email: "ridham643@gmail.com"  # Used for all organizer communication
+  phone: "+91-9336026772"        # Used for top-50 / top-10 outreach
+
+team_members:
+  - name: "Ridham Taneja"
+    email: "ridham643@gmail.com"
+    role: "Team Lead, Backend, Frontend, Data, Analytics, Evaluation"          # Optional, e.g. "Team Lead", "Backend", "Data"
+  # Add more members as needed; solo participants list just one member
+
+# ============================================================================
+# Code and reproducibility
+# ============================================================================
+github_repo: "https://github.com/DeemonDuck/redrob-candidate-ranker"
+# Required. Must be reachable. Private repos OK if you can grant organizer
+# access at Stage 3 (the email to add will be communicated then).
+
+sandbox_link: "https://redrobe-candidate-ranker.streamlit.app/"
+# Required. A working hosted environment where the ranker can be run on a small
+# candidate sample. See Section 10.5 of submission_spec.md for acceptable
+# platforms (HuggingFace Spaces, Streamlit Cloud, Replit, Colab, Docker, Binder).
+
+reproduce_command: "python rank.py --candidates ./data/candidates.jsonl.gz --out ./submission.csv"
+# The single command that produces submission.csv from candidates.jsonl.
+# Should run end-to-end within 5 minutes on CPU with 16GB RAM and no network.
+
+# ============================================================================
+# Compute environment
+# ============================================================================
+compute:
+  platform: "HP Laptop 15s (Local Windows Machine)"                    # Or: "AWS EC2 c5.4xlarge", "Local Linux box", etc.
+  cpu_cores: 8                                  # Number of CPU cores used
+  ram_gb: 16                                    # Available RAM in GB
+  python_version: "3.11.0"                      # python --version
+  os: "Windows 11"                              # Or "Ubuntu 22.04 LTS", etc.
+  uses_gpu_for_inference: false                 # Must be false — see compute constraints
+  has_network_during_ranking: false             # Must be false — no API calls during ranking
+  pre_computation_required: false               # true if you pre-compute embeddings or train models offline
+  pre_computation_time_minutes: 0               # Approximate, if applicable
+
+# ============================================================================
+# AI tools declaration
+# ============================================================================
+# Transparency only — declared use is NOT penalized. Be honest. Stage 5 interview
+# may verify these declarations against your code; declarations that contradict
+# your code or your interview are flagged.
+ai_tools_used:
+  - "Claude"        # e.g. for architecture discussion, code review
+  - "ChatGPT"  # e.g. for autocomplete
+  # Other options: "ChatGPT", "Cursor", "Gemini", "Codeium", "Other", "None"
+
+ai_usage_summary: |
+  Briefly describe how AI tools were used. Examples:
+  - "Used Claude for layer design and architectural discussion, code-review and major debugging."
+  - "No candidate data was fed to any LLM at any point  — the ranking pipeline is fully rule-based and runs without network access"
+  - "Used ChatGPT to debug minor Python issues as well as for generating testing scripts for each layer"
+
+# ============================================================================
+# Approach summary (optional but recommended)
+# ============================================================================
+methodology_summary: |
+  
+  "Five-layer rule-based pipeline with explicit signal separation. Layer 1
+  eliminates honeypots (impossible tenure, expert-skill-zero-usage, experience
+  mismatch) and hard disqualifiers (experience floor, pure services career,
+  wrong domain). Layer 2 converts soft signals into a weighted JD-fit score
+  across five dimensions: career-skills alignment, trusted must-have skills,
+  must-have evidence in career text, production deployment evidence, and
+  pre-LLM background — production evidence carries the highest weight (0.30)
+  as the JD explicitly targets builders over researchers. Layer 3 scores
+  location and availability independently. Layer 4 combines all signals into
+  a final score (0.65*JD-fit + 0.10*location + 0.10*availability +
+  0.15*platform behaviour). Layer 5 sorts, applies deterministic tie-breaking
+  by candidate_id, and generates fact-grounded reasoning from real candidate
+  data — no LLM. Key design decisions: ghost-skill detection via
+  endorsement+duration trust multipliers, set-iteration determinism fix for
+  reproducible scores across runs, and honeypot patterns handled before any
+  scoring. Runtime: under 5 minutes on CPU for 100K candidates."
+
+# ============================================================================
+# Declarations
+# ============================================================================
+declarations:
+  read_submission_spec: true        # I have read submission_spec.md in full
+  code_is_original_work: true       # My code is my team's original work (using AI as a tool is fine)
+  no_collusion: true                # I have not coordinated my submission with other teams
+  honeypot_check_done: false        # OPTIONAL — set true if you explicitly checked for honeypots in your ranking
+  reproduction_tested: true         # I have tested that my reproduce_command runs end-to-end
